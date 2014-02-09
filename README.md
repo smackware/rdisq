@@ -11,10 +11,10 @@ Please see the examples dir
 
 Quick but full start
 ==========
-# Install redis (apt-get install redis, or yum, or... well... you get it :)
-# Install redis python module 
-# Install this module
-# Write a simple worker (worker.py)
+- Install redis (apt-get install redis, or yum, or... well... you get it :)
+- Install redis python module 
+- Install this module
+- Write a simple worker (worker.py)
 ```
 from rdisq.config import SimpleRedisConfig
 from rdisq import Rdisq
@@ -39,7 +39,7 @@ if __name__ == '__main__':
     worker.process() # Blocking loop
     
 ```
-# Write a simple consumer that can use this worker
+- Write a simple consumer that can use this worker
 ```
 from worker import worker # notice we imported the instance, not the class
 
