@@ -21,7 +21,7 @@ from rdisq import Rdisq
 
 class MyWorker(Rdisq):
     # Notice, all the exported workload methods are prefixed with q_
-    q_do_work(self, param1, param2, param3=None):
+    def q_do_work(self, param1, param2, param3=None):
         # Just return a simple dict, but technically we can do w/e we like here
         data = {
             "first": param1,
@@ -29,6 +29,9 @@ class MyWorker(Rdisq):
             "key_arg": param3,
             }
         return data
+
+    def q_add_num(self, a, b):
+        return a + b
 
 # We can instantiate our worker right away
 queue_config = SimpleQueueConfig("my_queue_prefix")
