@@ -138,6 +138,9 @@ class Rdisq(object):
     def exception_handler(self, e):
         raise e
 
+    def startup(self):
+        pass
+
     def __process_one(self, timeout=0):
         """Process a single queue event
         Will pend for an event (unless timeout is specified) then it will process it
@@ -166,6 +169,7 @@ class Rdisq(object):
         self.post(queue_name)
         
     def process(self):
+        self.start()
         while self.__go:
             try:
                 self.__process_one()
