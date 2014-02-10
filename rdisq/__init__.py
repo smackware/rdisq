@@ -138,7 +138,7 @@ class Rdisq(object):
     def exception_handler(self, e):
         raise e
 
-    def startup(self):
+    def on_start(self):
         pass
 
     def __process_one(self, timeout=0):
@@ -169,7 +169,7 @@ class Rdisq(object):
         self.post(queue_name)
         
     def process(self):
-        self.start()
+        self.on_start()
         while self.__go:
             try:
                 self.__process_one()
