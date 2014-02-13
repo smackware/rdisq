@@ -10,7 +10,7 @@ def read(fname):
 
 setup(
     name = "rdisq",
-    version = "0.0.1",
+    version = "0.0.2",
     author = "Lital Natan",
     author_email = "litaln@gmail.com",
     description = ("Super minimal workload distribution framework over redis queues"),
