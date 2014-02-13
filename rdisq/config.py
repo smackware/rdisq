@@ -7,6 +7,10 @@ class AbstractQueueConfig(object):
     def get_name(self):
         raise NotImplementedError()
 
+    def get_timeout(self):
+        """Timeout in seconds"""
+        return 5
+
 
 class SimpleQueueConfig(AbstractQueueConfig):
     __queue_name = None

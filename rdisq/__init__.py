@@ -4,6 +4,15 @@ import time
 import uuid
 import redis
 
+"""
+Terminology
+================
+
+request_key - a redis key containing the payload data of the request
+queue - a redis queue with references to request_keys
+response_key a redis key containing the payload data of the response of a certain request
+"""
+
 try:
     from cPickle import loads, dumps #, UnpicklingError
 except ImportError:  # noqa
@@ -34,12 +43,15 @@ def encode(obj):
 def decode(data):
     return loads(data)
 
-
-class ResultTimeout(Exception):
-    task_id = None
-
+class AbstractTaskException(Exception):
     def __init__(self, task_id):
         self.task_id = task_id
+
+class ExpiredRequest(AbstractTaskException):
+    pass
+
+class ResultTimeout(AbstractTaskException):
+    pass
 
 class Result(object):
     _task_id = None
@@ -64,7 +76,9 @@ class Result(object):
         redis_con = self.consumer.queue_config.get_redis()
         return redis_con.exists(self._task_id)
 
-    def wait(self, timeout=2):
+    def wait(self, timeout=None):
+        if timeout is None:
+            timeout = self.consumer.queue_config.get_timeout()
         redis_con = self.consumer.queue_config.get_redis()
         redis_response = redis_con.brpop(self._task_id, timeout=timeout) # can be tuple of (queue_name, string) or None
         if redis_response is None:
@@ -113,7 +127,12 @@ class Rdisq(object):
             raise last_exception
         return c 
 
+    @staticmethod
+    def __get_request_key(task_id):
+	return "request_%s" % (task_id, )
+
     def send(self, queue_name, *args, **kwargs):
+	timeout = kwargs.pop("timeout", self.queue_config.get_timeout())
         redis_con = self.queue_config.get_redis()
         task_id = queue_name + generate_task_id()
         payload = {
@@ -121,7 +140,9 @@ class Rdisq(object):
             ARGS_ATTR: args,
             KWARGS_ATTR: kwargs,
         }
-        redis_con.lpush(queue_name, encode(payload))
+	request_key = self.__get_request_key(task_id)
+        redis_con.setex(request_key, encode(payload), timeout)
+        redis_con.lpush(queue_name, task_id)
         return Result(task_id, self)
 
     def get_queue_name(self, method_name):
@@ -149,11 +170,18 @@ class Rdisq(object):
         redis_result = redis_con.brpop(self.__queue_to_callable.keys(), timeout=timeout)
         if redis_result is None: # Timeout
             return
-        queue_name, data_string = redis_result
-        self.pre(queue_name)
+        queue_name, task_id = redis_result
+	request_key = self.__get_request_key(task_id)
         call = self.__queue_to_callable[queue_name]
+	data_string = redis_con.get(request_key)
+	if data_string is None:
+            return	
+        self.pre(queue_name)
         task_data = decode(data_string)
-        task_id = task_data[TASK_ID_ATTR]
+        payload_task_id = task_data[TASK_ID_ATTR]
+        if payload_task_id != task_id:
+            # TODO: Though this situation is not expected to happen, I should still handle this raise better
+            raise Exception("Severe error")
         args    = task_data[ARGS_ATTR]
         kwargs  = task_data[KWARGS_ATTR]
         start = time.time()
