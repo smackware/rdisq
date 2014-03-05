@@ -60,7 +60,7 @@ class Result(object):
     processtime = None
     totaltime = None
     _start = None
-   
+
 
     def __init__(self, task_id, consumer):
         self._task_id = task_id
@@ -90,6 +90,11 @@ class Result(object):
         redis_con.delete(self._task_id)
         return self.response[RESULT_ATTR]
 
+# Fugly right? I bet there's a better way to generate this dynamic object
+class Async(object):
+    def _reg_call(self, name, call):
+        setattr(self, name, call)
+
 class Rdisq(object):
     queue_config = None
     __go = True
@@ -97,6 +102,7 @@ class Rdisq(object):
     def __init__(self, queue_config):
         self.queue_config = queue_config
         self.__queue_to_callable = {}
+        self.async = Async()
         for attr in dir(self):
             if attr.startswith(EXPORTED_METHOD_PREFIX):
                 call = getattr(self, attr)
@@ -105,6 +111,7 @@ class Rdisq(object):
                 queue_name = self.get_queue_name(method_name_sync)
                 setattr(self, method_name_sync, self.__get_sync_method(self, queue_name))
                 setattr(self, method_name_async, self.__get_async_method(self, queue_name))
+                self.async._reg_call(method_name_sync, self.__get_async_method(self, queue_name))
                 self.__queue_to_callable[queue_name] = call
 
     # Helper for restricting the scope
@@ -112,7 +119,7 @@ class Rdisq(object):
     def __get_async_method(parent, queue_name):
         def c(*args, **kwargs):
             return parent.send(queue_name, *args, **kwargs)
-        return c 
+        return c
 
     # Helper for restricting the scope
     @staticmethod
@@ -125,7 +132,7 @@ class Rdisq(object):
                 except ResultTimeout as e:
                     last_exception = e
             raise last_exception
-        return c 
+        return c
 
     @staticmethod
     def __get_request_key(task_id):
@@ -175,7 +182,7 @@ class Rdisq(object):
         call = self.__queue_to_callable[queue_name]
 	data_string = redis_con.get(request_key)
 	if data_string is None:
-            return	
+            return
         self.pre(queue_name)
         task_data = decode(data_string)
         payload_task_id = task_data[TASK_ID_ATTR]
@@ -195,7 +202,7 @@ class Rdisq(object):
         redis_con.lpush(task_id, response_string)
         redis_con.expire(task_id, 10)
         self.post(queue_name)
-        
+
     def process(self):
         self.on_start()
         while self.__go:
