@@ -102,7 +102,7 @@ class Result(object):
 
 # Fugly right? I bet there's a better way to generate this dynamic object
 class Async(object):
-    def __reg_call(self, name, call):
+    def _reg_call(self, name, call):
         setattr(self, name, call)
 
 
@@ -122,7 +122,7 @@ class Rdisq(object):
                 queue_name = self.get_queue_name(method_name_sync)
                 setattr(self, method_name_sync, self.__get_sync_method(self, queue_name))
                 setattr(self, method_name_async, self.__get_async_method(self, queue_name))
-                self.async.__reg_call(method_name_sync, self.__get_async_method(self, queue_name))
+                self.async._reg_call(method_name_sync, self.__get_async_method(self, queue_name))
                 self.__queue_to_callable[queue_name] = call
         if not self.__queue_to_callable:
             raise WorkerInitException("Cannot instantiate a worker with no exposed methods")
