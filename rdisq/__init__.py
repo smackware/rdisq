@@ -71,11 +71,14 @@ class Result(object):
     process_time = None
     total_time = None
     _start = None
+    timeout = None
 
-    def __init__(self, task_id, consumer):
+    def __init__(self, task_id, consumer, timeout=None):
         self._task_id = task_id
         self.consumer = consumer
         self._start = time.time()
+        if timeout is None:
+            self.timeout = self.consumer.queue_config.get_timeout()
 
     # This method is deprecated
     def peek(self):
@@ -83,11 +86,11 @@ class Result(object):
 
     def is_processed(self):
         redis_con = self.consumer.queue_config.get_redis()
-        return redis_con.exists(self._task_id)
+        return redis_con.llen(self._task_id) > 0
 
     def wait(self, timeout=None):
         if timeout is None:
-            timeout = self.consumer.queue_config.get_timeout()
+            timeout = self.timeout
         redis_con = self.consumer.queue_config.get_redis()
         redis_response = redis_con.brpop(self._task_id, timeout=timeout)  # can be tuple of (queue_name, string) or None
         if redis_response is None:
@@ -217,7 +220,6 @@ class Rdisq(object):
         redis_con.lpush(task_id, response_string)
         redis_con.expire(task_id, timeout)
         self.post(queue_name)
-
 
     def process(self):
         self.on_start()
