@@ -219,14 +219,14 @@ class Rdisq(object):
         self.post(queue_name)
 
 
-def process(self):
-    self.on_start()
-    while self.__go:
-        try:
-            self.__process_one()
-        except Exception as e:
-            self.exception_handler(e)
+    def process(self):
+        self.on_start()
+        while self.__go:
+            try:
+                self.__process_one()
+            except Exception as e:
+                self.exception_handler(e)
 
 
-def stop(self):
-    self.__go = False
+    def stop(self):
+        self.__go = False
