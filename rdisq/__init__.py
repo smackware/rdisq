@@ -14,9 +14,9 @@ response_key a redis key containing the payload data of the response of a certai
 """
 
 try:
-    from cPickle import loads, dumps #, UnpicklingError
+    from cPickle import loads, dumps  #, UnpicklingError
 except ImportError:  # noqa
-    from pickle import loads, dumps #, UnpicklingError
+    from pickle import loads, dumps  #, UnpicklingError
 
 get_mac = lambda: uuid.getnode()
 redis_pool = redis.ConnectionPool(host='localhost', port=6379, db=5)
@@ -25,48 +25,57 @@ redis_pool = redis.ConnectionPool(host='localhost', port=6379, db=5)
 TASK_ID_ATTR = "task_id"
 ARGS_ATTR = "args"
 KWARGS_ATTR = "kwargs"
-
 RESULT_ATTR = "result"
-PROCESSTIME_ATTR = "processtime"
+PROCESS_TIME_ATTR = "process_time"
+TIMEOUT_ATTR = "timeout"
 
 EXPORTED_METHOD_PREFIX = "q_"
 
 # Unique consumer ID
 CONSUMER_ID = "%s-%s" % (get_mac(), os.getpid(), )
 
+
 def generate_task_id():
     return "%s-%s" % (CONSUMER_ID, uuid.uuid4().hex, )
+
 
 def encode(obj):
     return dumps(obj)
 
+
 def decode(data):
     return loads(data)
+
 
 class AbstractTaskException(Exception):
     def __init__(self, task_id):
         self.task_id = task_id
 
+
 class ExpiredRequest(AbstractTaskException):
     pass
 
+
 class ResultTimeout(AbstractTaskException):
     pass
+
+
+class WorkerInitException(Exception):
+    pass
+
 
 class Result(object):
     _task_id = None
     consumer = None
     response = None
-    processtime = None
-    totaltime = None
+    process_time = None
+    total_time = None
     _start = None
-
 
     def __init__(self, task_id, consumer):
         self._task_id = task_id
         self.consumer = consumer
-	self._start = time.time()
-
+        self._start = time.time()
 
     # This method is deprecated
     def peek(self):
@@ -80,20 +89,22 @@ class Result(object):
         if timeout is None:
             timeout = self.consumer.queue_config.get_timeout()
         redis_con = self.consumer.queue_config.get_redis()
-        redis_response = redis_con.brpop(self._task_id, timeout=timeout) # can be tuple of (queue_name, string) or None
+        redis_response = redis_con.brpop(self._task_id, timeout=timeout)  # can be tuple of (queue_name, string) or None
         if redis_response is None:
             raise ResultTimeout(self._task_id)
         queue_name, response = redis_response
-        self.totaltime = time.time() - self._start
+        self.total_time = time.time() - self._start
         self.response = decode(response)
-        self.processtime = self.response[PROCESSTIME_ATTR]
+        self.process_time = self.response[PROCESS_TIME_ATTR]
         redis_con.delete(self._task_id)
         return self.response[RESULT_ATTR]
 
+
 # Fugly right? I bet there's a better way to generate this dynamic object
 class Async(object):
-    def _reg_call(self, name, call):
+    def __reg_call(self, name, call):
         setattr(self, name, call)
+
 
 class Rdisq(object):
     queue_config = None
@@ -111,8 +122,10 @@ class Rdisq(object):
                 queue_name = self.get_queue_name(method_name_sync)
                 setattr(self, method_name_sync, self.__get_sync_method(self, queue_name))
                 setattr(self, method_name_async, self.__get_async_method(self, queue_name))
-                self.async._reg_call(method_name_sync, self.__get_async_method(self, queue_name))
+                self.async.__reg_call(method_name_sync, self.__get_async_method(self, queue_name))
                 self.__queue_to_callable[queue_name] = call
+        if not self.__queue_to_callable:
+            raise WorkerInitException("Cannot instantiate a worker with no exposed methods")
 
     # Helper for restricting the scope
     @staticmethod
@@ -126,7 +139,7 @@ class Rdisq(object):
     def __get_sync_method(parent, queue_name):
         def c(*args, **kwargs):
             last_exception = None
-            for i in xrange(0,3):
+            for i in xrange(0, 3):
                 try:
                     return parent.send(queue_name, *args, **kwargs).wait()
                 except ResultTimeout as e:
@@ -136,18 +149,19 @@ class Rdisq(object):
 
     @staticmethod
     def __get_request_key(task_id):
-	return "request_%s" % (task_id, )
+        return "request_%s" % (task_id, )
 
     def send(self, queue_name, *args, **kwargs):
-	timeout = kwargs.pop("timeout", self.queue_config.get_timeout())
+        timeout = kwargs.pop("timeout", self.queue_config.get_timeout())
         redis_con = self.queue_config.get_redis()
         task_id = queue_name + generate_task_id()
         payload = {
             TASK_ID_ATTR: task_id,
             ARGS_ATTR: args,
             KWARGS_ATTR: kwargs,
+            TIMEOUT_ATTR: timeout,
         }
-	request_key = self.__get_request_key(task_id)
+        request_key = self.__get_request_key(task_id)
         redis_con.setex(request_key, encode(payload), timeout)
         redis_con.lpush(queue_name, task_id)
         return Result(task_id, self)
@@ -175,41 +189,44 @@ class Rdisq(object):
         """
         redis_con = self.queue_config.get_redis()
         redis_result = redis_con.brpop(self.__queue_to_callable.keys(), timeout=timeout)
-        if redis_result is None: # Timeout
+        if redis_result is None:  # Timeout
             return
         queue_name, task_id = redis_result
-	request_key = self.__get_request_key(task_id)
+        request_key = self.__get_request_key(task_id)
         call = self.__queue_to_callable[queue_name]
-	data_string = redis_con.get(request_key)
-	if data_string is None:
+        data_string = redis_con.get(request_key)
+        if data_string is None:
             return
         self.pre(queue_name)
         task_data = decode(data_string)
+        timeout = task_data.get(TIMEOUT_ATTR, 10)
         payload_task_id = task_data[TASK_ID_ATTR]
         if payload_task_id != task_id:
             # TODO: Though this situation is not expected to happen, I should still handle this raise better
             raise Exception("Severe error")
-        args    = task_data[ARGS_ATTR]
-        kwargs  = task_data[KWARGS_ATTR]
+        args = task_data[ARGS_ATTR]
+        kwargs = task_data[KWARGS_ATTR]
         start = time.time()
         result = call(*args, **kwargs)
-	duration = time.time() - start
+        duration = time.time() - start
         response = {
             RESULT_ATTR: result,
-            PROCESSTIME_ATTR: duration,
-	}
+            PROCESS_TIME_ATTR: duration,
+        }
         response_string = encode(response)
         redis_con.lpush(task_id, response_string)
-        redis_con.expire(task_id, 10)
+        redis_con.expire(task_id, timeout)
         self.post(queue_name)
 
-    def process(self):
-        self.on_start()
-        while self.__go:
-            try:
-                self.__process_one()
-            except Exception as e:
-                self.exception_handler(e)
 
-    def stop(self):
-        self.__go = False
+def process(self):
+    self.on_start()
+    while self.__go:
+        try:
+            self.__process_one()
+        except Exception as e:
+            self.exception_handler(e)
+
+
+def stop(self):
+    self.__go = False
