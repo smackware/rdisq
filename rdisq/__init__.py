@@ -19,7 +19,6 @@ except ImportError:  # noqa
     from pickle import loads, dumps  #, UnpicklingError
 
 get_mac = lambda: uuid.getnode()
-redis_pool = redis.ConnectionPool(host='localhost', port=6379, db=5)
 
 # Consts
 TASK_ID_ATTR = "task_id"
