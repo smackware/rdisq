@@ -166,7 +166,7 @@ class Rdisq(object):
         request_key = self.__get_request_key(task_id)
         redis_con.setex(request_key, encode(payload), timeout)
         redis_con.lpush(queue_name, task_id)
-        return Result(task_id, self)
+        return Result(task_id, self, timeout=timeout)
 
     def get_queue_name(self, method_name):
         return self.queue_config.get_name() + "_" + method_name
