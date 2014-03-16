@@ -112,7 +112,7 @@ class Rdisq(object):
     queue_config = None
     __go = True
 
-    def __init__(self, queue_config):
+    def __init__(self, queue_config, *args, **kwargs):
         self.queue_config = queue_config
         self.__queue_to_callable = {}
         self.async = Async()
