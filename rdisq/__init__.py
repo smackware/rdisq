@@ -128,6 +128,7 @@ class Rdisq(object):
                 self.__queue_to_callable[queue_name] = call
         if not self.__queue_to_callable:
             raise WorkerInitException("Cannot instantiate a worker with no exposed methods")
+        self.init(*args, **kwargs)
 
     # Helper for restricting the scope
     @staticmethod
@@ -170,6 +171,10 @@ class Rdisq(object):
 
     def get_queue_name(self, method_name):
         return self.queue_config.get_name() + "_" + method_name
+
+    def init(self, *args, **kwargs):
+        """Run on instatiation, use this instead of __init__"""
+        pass
 
     def pre(self, queue_name):
         """Performs after something was found in the queue"""
