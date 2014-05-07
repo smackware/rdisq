@@ -25,6 +25,7 @@ TASK_ID_ATTR = "task_id"
 ARGS_ATTR = "args"
 KWARGS_ATTR = "kwargs"
 RESULT_ATTR = "result"
+EXCEPTION_ATTR = "exception"
 PROCESS_TIME_ATTR = "process_time"
 TIMEOUT_ATTR = "timeout"
 
@@ -71,6 +72,7 @@ class Result(object):
     total_time = None
     _start = None
     timeout = None
+    exception = None
 
     def __init__(self, task_id, consumer, timeout=None):
         self._task_id = task_id
@@ -87,6 +89,15 @@ class Result(object):
         redis_con = self.consumer.queue_config.get_redis()
         return redis_con.llen(self._task_id) > 0
 
+    def is_exception(self):
+        return self.exception is not None
+
+    def process_response(self, decoded_response):
+        self.response = decoded_response
+        self.process_time = self.response[PROCESS_TIME_ATTR]
+        self.exception = self.response[EXCEPTION_ATTR]
+        return self.response[RESULT_ATTR]
+
     def wait(self, timeout=None):
         if timeout is None:
             timeout = self.timeout
@@ -96,9 +107,11 @@ class Result(object):
             raise ResultTimeout(self._task_id)
         queue_name, response = redis_response
         self.total_time = time.time() - self._start
-        self.response = decode(response)
-        self.process_time = self.response[PROCESS_TIME_ATTR]
+        decoded_response = decode(response)
         redis_con.delete(self._task_id)
+        self.process_response(decoded_response)
+        if self.is_exception():
+            raise self.exception
         return self.response[RESULT_ATTR]
 
 
@@ -214,11 +227,18 @@ class Rdisq(object):
         args = task_data[ARGS_ATTR]
         kwargs = task_data[KWARGS_ATTR]
         start = time.time()
-        result = call(*args, **kwargs)
+
+        try:
+            result = call(*args, **kwargs)
+            exception = None
+        except Exception as ex:
+            result = None
+            exception = ex
         duration = time.time() - start
         response = {
             RESULT_ATTR: result,
             PROCESS_TIME_ATTR: duration,
+            EXCEPTION_ATTR: exception,
         }
         response_string = encode(response)
         redis_con.lpush(task_id, response_string)

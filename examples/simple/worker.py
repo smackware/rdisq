@@ -1,6 +1,8 @@
 from rdisq import Rdisq
 from rdisq.config import SimpleQueueConfig
 
+class GrumpyException(Exception):
+    pass
 
 class MyClass(Rdisq):
     def q_add(self, a, b):
@@ -16,6 +18,9 @@ class MyClass(Rdisq):
     
         # Return a dict, just to spice things up a bit
         return {"message from the worker": "I'm done!"}
+
+    def q_grumpy(self):
+        raise GrumpyException("I'M ALWAYS GRUMPY!")
 
 
 myClass = MyClass(SimpleQueueConfig("queue_prefix"))
