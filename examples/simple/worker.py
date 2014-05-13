@@ -1,17 +1,15 @@
-from redis import Redis
-from rdisq import Rdisq
+from rdisq.redis_dispatcher import LocalRedisDispatcher
+from rdisq.service import RdisqService
 
 
 class GrumpyException(Exception):
     pass
 
 
-class MyClass(Rdisq):
-    queue_name = "my_service"
+class MyClass(RdisqService):
+    service_name = "my_service"
     queue_timeout = 10 # seconds
-
-    def get_redis(self):
-        return Redis()
+    redis_dispatcher = LocalRedisDispatcher()
 
     @staticmethod
     def q_add(a, b):
@@ -21,9 +19,9 @@ class MyClass(Rdisq):
     def q_build(self, what, tool=None):
         # Showing here that args and kwargs can be used
         if tool is not None:
-            print "%s: I built you %s, using a %s" % (self.queue_name, what, tool,)
+            print "%s: I built you %s, using a %s" % (self.service_name, what, tool,)
         else:
-            print "%s: I built you %s, using a my bear [sic] hands" % (self.queue_name, what, )
+            print "%s: I built you %s, using a my bear [sic] hands" % (self.service_name, what, )
     
         # Return a dict, just to spice things up a bit
         return {"message from the worker": "I'm done!"}

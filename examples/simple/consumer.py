@@ -3,19 +3,18 @@
 from worker import GrumpyException
 from worker import MyClass
 
-myClass = MyClass()
 
 # Call the add method
-print myClass.add(1, 2)
+print MyClass.get_consumer().add(1, 2)
 
 # call the build method
-print myClass.build("a house")
+print MyClass.get_consumer().build("a house")
 
 # Now we will call the async form of "build"
-result = myClass.async_build("a house", "hammer")
+result = MyClass.get_async_consumer().build("a house", "hammer")
 print result.wait()
 
 try:
-    result = myClass.grumpy()
+    result = MyClass.get_consumer().grumpy()
 except GrumpyException as e:
     print "he's grumpy"

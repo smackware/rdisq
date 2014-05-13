@@ -1,7 +1,9 @@
 __author__ = 'smackware'
 from unittest.case import TestCase
-from rdisq import Result, RESULT_ATTR, PROCESS_TIME_ATTR, EXCEPTION_ATTR
-
+from rdisq.response import RdisqResponse
+from rdisq import RESULT_ATTR
+from rdisq import PROCESS_TIME_ATTR
+from rdisq import EXCEPTION_ATTR
 
 class RdisqTest(TestCase):
     def test__result__process_response(self):
@@ -10,8 +12,8 @@ class RdisqTest(TestCase):
             PROCESS_TIME_ATTR: 2,
             EXCEPTION_ATTR: None,
         }
-        result = Result(1, None, timeout=2)
-        returned_value = result.process_response(valid_response)
+        result = RdisqResponse(1, None)
+        returned_value = result.process_response_data(valid_response)
         self.assertEqual(result.exception, None)
         self.assertEqual(returned_value, "RETURNED")
 
@@ -24,7 +26,7 @@ class RdisqTest(TestCase):
             PROCESS_TIME_ATTR: 2,
             EXCEPTION_ATTR: TestException("BLAH"),
         }
-        result = Result(1, None, timeout=2)
-        response = result.process_response(valid_response)
+        result = RdisqResponse(1, None)
+        response = result.process_response_data(valid_response)
         self.assertEqual(response, None)
         self.assertTrue(isinstance(result.exception, TestException))

@@ -1,14 +1,12 @@
-from redis import Redis
-from rdisq import Rdisq
+from rdisq.service import RdisqService
+from rdisq.redis_dispatcher import PoolRedisDispatcher
 
 
-class Worker(Rdisq):
+class Worker(RdisqService):
     service_name = "BestServiceEver"
     response_timeout = 5
     stop_on_fail = False
-
-    def get_redis(self):
-        return Redis()
+    redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
 
     def q_calculate(self, a, b, c):
         return (a*b) + c;
