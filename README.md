@@ -42,7 +42,10 @@ class MyClass(RdisqService):
 if __name__ == '__main__':
     MyWorker().process() # Blocking loop
     
-```Get the remote consumer inside another python process
+```
+
+Get the remote consumer inside another python process
+
 ```
 from worker import MyClass # notice we imported the instance, not the class
 
