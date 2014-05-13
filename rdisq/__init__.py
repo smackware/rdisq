@@ -2,7 +2,6 @@
 import os
 import time
 import uuid
-import redis
 
 """
 Terminology
@@ -79,14 +78,14 @@ class Result(object):
         self.consumer = consumer
         self._start = time.time()
         if timeout is None:
-            self.timeout = self.consumer.queue_config.get_timeout()
+            self.timeout = self.consumer.response_timeout
 
     # This method is deprecated
     def peek(self):
         return self.is_processed()
 
     def is_processed(self):
-        redis_con = self.consumer.queue_config.get_redis()
+        redis_con = self.consumer.get_redis()
         return redis_con.llen(self._task_id) > 0
 
     def is_exception(self):
@@ -101,7 +100,7 @@ class Result(object):
     def wait(self, timeout=None):
         if timeout is None:
             timeout = self.timeout
-        redis_con = self.consumer.queue_config.get_redis()
+        redis_con = self.consumer.get_redis()
         redis_response = redis_con.brpop(self._task_id, timeout=timeout)  # can be tuple of (queue_name, string) or None
         if redis_response is None:
             raise ResultTimeout(self._task_id)
@@ -117,16 +116,24 @@ class Result(object):
 
 # Fugly right? I bet there's a better way to generate this dynamic object
 class Async(object):
-    def _reg_call(self, name, call):
+    def reg_call_(self, name, call):
         setattr(self, name, call)
 
 
 class Rdisq(object):
-    queue_config = None
+    service_name = None
+    response_timeout = 10
     __go = True
 
-    def __init__(self, queue_config, *args, **kwargs):
-        self.queue_config = queue_config
+    def __init__(self):
+        self.__queue_to_callable = None
+        self.async = None
+        self.__setup_stub_methods_for_consumer()
+
+    def get_redis(self):
+        raise NotImplementedError("Must implement get_redis(self) method of Rdisq subclass")
+
+    def __setup_stub_methods_for_consumer(self):
         self.__queue_to_callable = {}
         self.async = Async()
         for attr in dir(self):
@@ -134,14 +141,13 @@ class Rdisq(object):
                 call = getattr(self, attr)
                 method_name_sync = attr[len(EXPORTED_METHOD_PREFIX):]
                 method_name_async = "async_" + method_name_sync
-                queue_name = self.get_queue_name(method_name_sync)
-                setattr(self, method_name_sync, self.__get_sync_method(self, queue_name))
-                setattr(self, method_name_async, self.__get_async_method(self, queue_name))
-                self.async._reg_call(method_name_sync, self.__get_async_method(self, queue_name))
-                self.__queue_to_callable[queue_name] = call
+                method_queue_name = self.get_queue_name_for_method(method_name_sync)
+                setattr(self, method_name_sync, self.__get_sync_method(self, method_queue_name))
+                setattr(self, method_name_async, self.__get_async_method(self, method_queue_name))
+                self.async.reg_call_(method_name_sync, self.__get_async_method(self, method_queue_name))
+                self.__queue_to_callable[method_queue_name] = call
         if not self.__queue_to_callable:
             raise WorkerInitException("Cannot instantiate a worker with no exposed methods")
-        self.init(*args, **kwargs)
 
     # Helper for restricting the scope
     @staticmethod
@@ -152,12 +158,12 @@ class Rdisq(object):
 
     # Helper for restricting the scope
     @staticmethod
-    def __get_sync_method(parent, queue_name):
+    def __get_sync_method(parent, method_queue_name):
         def c(*args, **kwargs):
             last_exception = None
             for i in xrange(0, 3):
                 try:
-                    return parent.send(queue_name, *args, **kwargs).wait()
+                    return parent.send(method_queue_name, *args, **kwargs).wait()
                 except ResultTimeout as e:
                     last_exception = e
             raise last_exception
@@ -167,10 +173,10 @@ class Rdisq(object):
     def __get_request_key(task_id):
         return "request_%s" % (task_id, )
 
-    def send(self, queue_name, *args, **kwargs):
-        timeout = kwargs.pop("timeout", self.queue_config.get_timeout())
-        redis_con = self.queue_config.get_redis()
-        task_id = queue_name + generate_task_id()
+    def send(self, method_queue_name, *args, **kwargs):
+        timeout = kwargs.pop("timeout", self.response_timeout)
+        redis_con = self.get_redis()
+        task_id = method_queue_name + generate_task_id()
         payload = {
             TASK_ID_ATTR: task_id,
             ARGS_ATTR: args,
@@ -179,21 +185,21 @@ class Rdisq(object):
         }
         request_key = self.__get_request_key(task_id)
         redis_con.setex(request_key, encode(payload), timeout)
-        redis_con.lpush(queue_name, task_id)
+        redis_con.lpush(method_queue_name, task_id)
         return Result(task_id, self, timeout=timeout)
 
-    def get_queue_name(self, method_name):
-        return self.queue_config.get_name() + "_" + method_name
+    def get_queue_name_for_method(self, method_name):
+        return self.service_name + "_" + method_name
 
     def init(self, *args, **kwargs):
         """Run on instatiation, use this instead of __init__"""
         pass
 
-    def pre(self, queue_name):
+    def pre(self, method_queue_name):
         """Performs after something was found in the queue"""
         pass
 
-    def post(self, queue_name):
+    def post(self, method_queue_name):
         """Performs after a queue fetch and process"""
         pass
 
@@ -207,17 +213,17 @@ class Rdisq(object):
         """Process a single queue event
         Will pend for an event (unless timeout is specified) then it will process it
         """
-        redis_con = self.queue_config.get_redis()
+        redis_con = self.get_redis()
         redis_result = redis_con.brpop(self.__queue_to_callable.keys(), timeout=timeout)
         if redis_result is None:  # Timeout
             return
-        queue_name, task_id = redis_result
+        method_queue_name, task_id = redis_result
         request_key = self.__get_request_key(task_id)
-        call = self.__queue_to_callable[queue_name]
+        call = self.__queue_to_callable[method_queue_name]
         data_string = redis_con.get(request_key)
         if data_string is None:
             return
-        self.pre(queue_name)
+        self.pre(method_queue_name)
         task_data = decode(data_string)
         timeout = task_data.get(TIMEOUT_ATTR, 10)
         payload_task_id = task_data[TASK_ID_ATTR]
@@ -243,7 +249,7 @@ class Rdisq(object):
         response_string = encode(response)
         redis_con.lpush(task_id, response_string)
         redis_con.expire(task_id, timeout)
-        self.post(queue_name)
+        self.post(method_queue_name)
 
     def process(self):
         self.on_start()
@@ -252,7 +258,6 @@ class Rdisq(object):
                 self.__process_one()
             except Exception as e:
                 self.exception_handler(e)
-
 
     def stop(self):
         self.__go = False

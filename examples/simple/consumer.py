@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
 from worker import GrumpyException
-from worker import myClass
+from worker import MyClass
+
+myClass = MyClass()
 
 # Call the add method
-print myClass.add(1,2)
+print myClass.add(1, 2)
 
 # call the build method
 print myClass.build("a house")

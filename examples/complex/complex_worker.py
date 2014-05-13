@@ -1,9 +1,14 @@
+from redis import Redis
 from rdisq import Rdisq
-from rdisq.config import PoolQueueConfig
 
 
 class Worker(Rdisq):
+    service_name = "BestServiceEver"
+    response_timeout = 5
     stop_on_fail = False
+
+    def get_redis(self):
+        return Redis()
 
     def q_calculate(self, a, b, c):
         return (a*b) + c;
@@ -28,4 +33,4 @@ class Worker(Rdisq):
             raise e
 
 if __name__ == '__main__':
-    Worker(PoolQueueConfig("worker_queue")).process()
+    Worker().process()
