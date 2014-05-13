@@ -47,7 +47,7 @@ if __name__ == '__main__':
 Get the remote consumer inside another python process
 
 ```
-from worker import MyClass # notice we imported the instance, not the class
+from worker import MyClass
 
 # NOTICE: we omitted the 'q_' prefix of the method
 print MyClass.get_consumer().do_work("p1", "sasfas", param3="a")  # prints '''{"first":"p1", "seconds":"sasfas", "key_arg":"a"}'''
