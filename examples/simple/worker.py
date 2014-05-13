@@ -8,8 +8,8 @@ class GrumpyException(Exception):
 
 class MyClass(RdisqService):
     service_name = "my_service"
-    queue_timeout = 10 # seconds
-    redis_dispatcher = LocalRedisDispatcher()
+    response_timeout = 10 # seconds
+    redis_dispatcher = LocalRedisDispatcher(host='localhost', port=6379, db=0)
 
     @staticmethod
     def q_add(a, b):

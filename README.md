@@ -16,11 +16,15 @@ Quick but full start
 - Install this module
 - Write a simple worker (worker.py)
 ```
-from rdisq.config import SimpleRedisConfig
-from rdisq import Rdisq
+from rdisq.service import RdisqService
+from rdisq.redis_dispatcher import PoolRedisDispatcher
 
-class MyWorker(Rdisq):
-    # Notice, all the exported workload methods are prefixed with q_
+
+class MyClass(RdisqService):
+    service_name = "my_service"
+    response_timeout = 10 # seconds
+    redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
+
     def q_do_work(self, param1, param2, param3=None):
         # Just return a simple dict, but technically we can do w/e we like here
         data = {
@@ -34,23 +38,19 @@ class MyWorker(Rdisq):
         return a + b
 
 # We can instantiate our worker right away
-queue_config = SimpleQueueConfig("my_queue_prefix")
-worker = MyWorker(queue_config)
-
 # Since this is an example, lets also start the blocking processing loop here
 if __name__ == '__main__':
-    worker.process() # Blocking loop
+    MyWorker().process() # Blocking loop
     
+```Get the remote consumer inside another python process
 ```
-- Write a simple consumer that can use this worker
-```
-from worker import worker # notice we imported the instance, not the class
+from worker import MyClass # notice we imported the instance, not the class
 
 # NOTICE: we omitted the 'q_' prefix of the method
-print worker.do_work("p1", "sasfas", param3="a")  # prints '''{"first":"p1", "seconds":"sasfas", "key_arg":"a"}'''
+print MyClass.get_consumer().do_work("p1", "sasfas", param3="a")  # prints '''{"first":"p1", "seconds":"sasfas", "key_arg":"a"}'''
 
 # We can also call the async one and get a callback object
-response = worker.async_do_work("p1", "sasfas") # returns a Response object
+response = MyClass.get_async_consumer().do_work("p1", "sasfas") # returns a Response object
 print response.wait() # blocks until a response (or a timeout), prints '''{"first":"p1", "seconds":"sasfas", "key_args":None}'''
 
 ```
