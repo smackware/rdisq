@@ -5,6 +5,8 @@ import time
 
 MISSING_DISPATCHER_ERROR_TEXT = \
     "Service class must have a 'redis_dispatcher' attribute pointing to a RedisDispatcher instance"
+MISSING_SERVICE_NAME_ERROR_TEXT = \
+    "Missing service_name class attribute"
 
 from . import TIMEOUT_ATTR, EXCEPTION_ATTR, RESULT_ATTR, ARGS_ATTR, KWARGS_ATTR, PROCESS_TIME_ATTR, EXPORTED_METHOD_PREFIX
 from . import TASK_ID_ATTR
@@ -26,6 +28,8 @@ class RdisqService(object):
     __async_consumer = None
 
     def __init__(self):
+        if self.service_name is None:
+            raise NotImplementedError(MISSING_SERVICE_NAME_ERROR_TEXT)
         if self.redis_dispatcher is None:
             raise NotImplementedError(MISSING_DISPATCHER_ERROR_TEXT)
         self.__queue_to_callable = None
