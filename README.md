@@ -16,7 +16,7 @@ Quick but full start
 - Install this module
 - Write a simple worker (worker.py)
 ```
-from rdisq.service import RdisqService
+from rdisq.service import RdisqService, remote_method
 from rdisq.redis_dispatcher import PoolRedisDispatcher
 
 
@@ -25,7 +25,8 @@ class MyClass(RdisqService):
     response_timeout = 10 # seconds
     redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
 
-    def q_do_work(self, param1, param2, param3=None):
+    @remote_method
+    def do_work(self, param1, param2, param3=None):
         # Just return a simple dict, but technically we can do w/e we like here
         data = {
             "first": param1,
@@ -34,7 +35,8 @@ class MyClass(RdisqService):
             }
         return data
 
-    def q_add_num(self, a, b):
+    @remote_method
+    def add_num(self, a, b):
         return a + b
 
 # We can instantiate our worker right away
@@ -49,7 +51,6 @@ Get the remote consumer inside another python process
 ```
 from worker import MyClass
 
-# NOTICE: we omitted the 'q_' prefix of the method
 print MyClass.get_consumer().do_work("p1", "sasfas", param3="a")  # prints '''{"first":"p1", "seconds":"sasfas", "key_arg":"a"}'''
 
 # We can also call the async one and get a callback object
