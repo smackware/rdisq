@@ -1,4 +1,4 @@
-from rdisq.redis_dispatcher import LocalRedisDispatcher
+from rdisq.redis_dispatcher import PoolRedisDispatcher
 from rdisq.service import RdisqService
 
 
@@ -9,7 +9,7 @@ class GrumpyException(Exception):
 class MyClass(RdisqService):
     service_name = "my_service"
     response_timeout = 10 # seconds
-    redis_dispatcher = LocalRedisDispatcher(host='localhost', port=6379, db=0)
+    redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
 
     @staticmethod
     def q_add(a, b):
