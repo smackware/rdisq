@@ -14,9 +14,9 @@ Quick but full start
 
 Installation
 -----------
-# Install a redis-server
-# pip install redis
-# pip install git+https://github.com/smackware/rdisq@master#egg=rdisq
+1. Install a redis-server
+2. pip install redis
+3. pip install git+https://github.com/smackware/rdisq@master#egg=rdisq
 
 Writing a simple service
 -----------
