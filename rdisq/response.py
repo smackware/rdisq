@@ -35,7 +35,7 @@ class RdisqResponse(object):
     def is_processed(self):
         if self.response_payload is not None:
             return True
-        redis_con = self.rdisq_consumer.get_redis()
+        redis_con = self.rdisq_consumer.service_class.redis_dispatcher.get_redis()
         return redis_con.llen(self._task_id) > 0
 
     def is_exception(self):
