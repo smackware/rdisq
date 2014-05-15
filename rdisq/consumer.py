@@ -29,12 +29,13 @@ class AbstractRdisqConsumer(object):
     def __setup_stub_methods_for_consumer(self):
         self.__queue_to_callable = {}
         for attr in dir(self.service_class):
-            if attr.startswith(EXPORTED_METHOD_PREFIX):
-                call = getattr(self.service_class, attr)
-                stub_method_name = self.service_class.chop_prefix_from_exported_method_name(attr)
-                method_queue_name = self.service_class.get_queue_name_for_method(stub_method_name)
-                setattr(self, stub_method_name, self.get_stub_method(method_queue_name))
-                self.__queue_to_callable[method_queue_name] = call
+            call = getattr(self.service_class, attr)
+            if not self.service_class.is_remote_method(call):
+                continue
+            stub_method_name = self.service_class.chop_prefix_from_exported_method_name(attr)
+            method_queue_name = self.service_class.get_queue_name_for_method(stub_method_name)
+            setattr(self, stub_method_name, self.get_stub_method(method_queue_name))
+            self.__queue_to_callable[method_queue_name] = call
         if not self.__queue_to_callable:
             raise AttributeError("Cannot instantiate a consumer with no exposed methods")
 

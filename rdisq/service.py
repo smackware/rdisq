@@ -20,6 +20,11 @@ from redis_dispatcher import LocalRedisDispatcher
 from consumer import RdisqAsyncConsumer
 from consumer import RdisqWaitingConsumer
 
+# Decorator
+def remote_method(callable):
+    callable.is_remote = True
+    return callable
+
 
 class RdisqService(object):
     service_name = None
@@ -43,12 +48,31 @@ class RdisqService(object):
         if not self.__queue_to_callable:
             raise AttributeError("Cannot instantiate a service with no exposed methods")
 
+
+    @classmethod
+    def get_method_if_exists(cls, name):
+        method = cls.__dict__.get(name)
+        if method is None or not hasattr(method, '__call__'):
+            return None
+        return method
+
+    @staticmethod
+    def is_remote_method(method):
+        if method is None or not hasattr(method, '__call__'):
+            return False
+        if hasattr(method, 'is_remote'):
+            return True
+        # Legacy compatibility, remote methods used to be prefixed with 'q_'
+        if method.__name__.startswith(EXPORTED_METHOD_PREFIX):
+            return True
+        return False
+
     def get_queue_name_to_exposed_method_mapping(self):
         mapping = {}
         for attr in dir(self):
-            if not attr.startswith(EXPORTED_METHOD_PREFIX):
-                continue
             call = getattr(self, attr)
+            if not self.is_remote_method(call):
+                continue
             stub_method_name = self.chop_prefix_from_exported_method_name(attr)
             method_queue_name = self.get_queue_name_for_method(stub_method_name)
             mapping[method_queue_name] = call
@@ -76,7 +100,10 @@ class RdisqService(object):
 
     @classmethod
     def chop_prefix_from_exported_method_name(cls, method_name):
-        return method_name[len(EXPORTED_METHOD_PREFIX):]
+        # Legacy compatibility, remote methods used to be prefixed with 'q_'
+        if method_name.startswith(EXPORTED_METHOD_PREFIX):
+            return method_name[len(EXPORTED_METHOD_PREFIX):]
+        return method_name
 
     def init(self, *args, **kwargs):
         """Run on instatiation, use this instead of __init__"""

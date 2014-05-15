@@ -1,5 +1,5 @@
+from rdisq.service import RdisqService, remote_method
 from rdisq.redis_dispatcher import PoolRedisDispatcher
-from rdisq.service import RdisqService
 
 
 class GrumpyException(Exception):
@@ -11,12 +11,15 @@ class MyClass(RdisqService):
     response_timeout = 10 # seconds
     redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
 
+
     @staticmethod
-    def q_add(a, b):
+    @remote_method
+    def add(a, b):
         # Do some simple work
         return a + b
 
-    def q_build(self, what, tool=None):
+    @remote_method
+    def build(self, what, tool=None):
         # Showing here that args and kwargs can be used
         if tool is not None:
             print "%s: I built you %s, using a %s" % (self.service_name, what, tool,)
@@ -27,7 +30,8 @@ class MyClass(RdisqService):
         return {"message from the worker": "I'm done!"}
 
     @staticmethod
-    def q_grumpy():
+    @remote_method
+    def grumpy():
         raise GrumpyException("I'M ALWAYS GRUMPY!")
 
 
