@@ -2,10 +2,8 @@ __author__ = 'smackware'
 
 
 from . import EXPORTED_METHOD_PREFIX
-from . import TASK_ID_ATTR
-from . import KWARGS_ATTR
-from . import TIMEOUT_ATTR
-from . import ARGS_ATTR
+from payload import ResponsePayload
+from payload import RequestPayload
 
 from serialization import encode
 
@@ -44,14 +42,14 @@ class AbstractRdisqConsumer(object):
         timeout = kwargs.pop("timeout", self.service_class.response_timeout)
         redis_con = self.service_class.redis_dispatcher.get_redis()
         task_id = method_queue_name + generate_task_id()
-        payload = {
-            TASK_ID_ATTR: task_id,
-            ARGS_ATTR: args,
-            KWARGS_ATTR: kwargs,
-            TIMEOUT_ATTR: timeout,
-        }
+        request_payload = RequestPayload(
+            task_id=task_id,
+            args=args,
+            kwargs=kwargs,
+            timeout=timeout
+        )
         request_key = get_request_key(task_id)
-        redis_con.setex(request_key, encode(payload), timeout)
+        redis_con.setex(request_key, encode(request_payload), timeout)
         redis_con.lpush(method_queue_name, task_id)
         return RdisqResponse(task_id, self)
 

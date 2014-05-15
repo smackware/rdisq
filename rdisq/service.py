@@ -8,8 +8,10 @@ MISSING_DISPATCHER_ERROR_TEXT = \
 MISSING_SERVICE_NAME_ERROR_TEXT = \
     "Missing service_name class attribute"
 
-from . import TIMEOUT_ATTR, EXCEPTION_ATTR, RESULT_ATTR, ARGS_ATTR, KWARGS_ATTR, PROCESS_TIME_ATTR, EXPORTED_METHOD_PREFIX
-from . import TASK_ID_ATTR
+from . import EXPORTED_METHOD_PREFIX
+
+from payload import RequestPayload
+from payload import ResponsePayload
 
 from identification import get_request_key
 from serialization import encode, decode
@@ -109,28 +111,26 @@ class RdisqService(object):
         if data_string is None:
             return
         self.pre(method_queue_name)
-        task_data = decode(data_string)
-        timeout = task_data.get(TIMEOUT_ATTR, 10)
-        payload_task_id = task_data[TASK_ID_ATTR]
-        if payload_task_id != task_id:
+        request_payload = decode(data_string)
+        timeout = request_payload.timeout
+        if request_payload.task_id != task_id:
             raise ValueError("Memorized task id is mismatching to received-payload task_id")
-        args = task_data[ARGS_ATTR]
-        kwargs = task_data[KWARGS_ATTR]
-        start = time.time()
-
+        args = request_payload.args
+        kwargs = request_payload.kwargs
+        time_start = time.time()
         try:
             result = call(*args, **kwargs)
-            exception = None
+            raised_exception = None
         except Exception as ex:
             result = None
-            exception = ex
-        duration = time.time() - start
-        response = {
-            RESULT_ATTR: result,
-            PROCESS_TIME_ATTR: duration,
-            EXCEPTION_ATTR: exception,
-        }
-        response_string = encode(response)
+            raised_exception = ex
+        duration_seconds = time.time() - time_start
+        response_payload = ResponsePayload(
+            returned_value=result,
+            processing_time_seconds=duration_seconds,
+            raised_exception=raised_exception
+        )
+        response_string = encode(response_payload)
         redis_con.lpush(task_id, response_string)
         redis_con.expire(task_id, timeout)
         self.post(method_queue_name)

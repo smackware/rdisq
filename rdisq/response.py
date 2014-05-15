@@ -3,9 +3,7 @@ __author__ = 'smackware'
 import time
 
 
-from . import PROCESS_TIME_ATTR
-from . import EXCEPTION_ATTR
-from . import RESULT_ATTR
+from payload import ResponsePayload
 from serialization import decode
 
 
@@ -19,12 +17,12 @@ class RdisqResponseTimeout(Exception):
 class RdisqResponse(object):
     _task_id = None
     rdisq_consumer = None
-    response_data = None
-    process_time_seconds = None
+    response_payload = None
     total_time_seconds = None
     called_at_unixtime = None
     timeout = None
     exception = None
+    returned_value = None
 
     def __init__(self, task_id, rdisq_consumer):
         self._task_id = task_id
@@ -35,17 +33,21 @@ class RdisqResponse(object):
         return self.rdisq_consumer.service_class.response_timeout
 
     def is_processed(self):
+        if self.response_payload is not None:
+            return True
         redis_con = self.rdisq_consumer.get_redis()
         return redis_con.llen(self._task_id) > 0
 
     def is_exception(self):
-        return self.exception is not None
+        return self.response_payload.raised_exception is not None
 
-    def process_response_data(self, decoded_response):
-        self.response_data = decoded_response
-        self.process_time_seconds = self.response_data[PROCESS_TIME_ATTR]
-        self.exception = self.response_data[EXCEPTION_ATTR]
-        return self.response_data[RESULT_ATTR]
+    @property
+    def process_time_seconds(self):
+        return self.response_payload.processing_time_seconds
+
+    @property
+    def exception(self):
+        return self.response_payload.raised_exception
 
     def wait(self):
         timeout = self.get_service_timeout()
@@ -55,9 +57,9 @@ class RdisqResponse(object):
             raise RdisqResponseTimeout(self._task_id)
         queue_name, response = redis_response
         self.total_time_seconds = time.time() - self.called_at_unixtime
-        decoded_response = decode(response)
+        response_payload = decode(response)
         redis_con.delete(self._task_id)
-        self.process_response_data(decoded_response)
+        self.response_payload = response_payload
         if self.is_exception():
             raise self.exception
-        return self.response_data[RESULT_ATTR]
+        return self.response_payload.returned_value
