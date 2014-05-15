@@ -14,47 +14,47 @@ Quick but full start
 - Install redis (apt-get install redis, or yum, or... well... you get it :)
 - Install redis python module 
 - Install this module
-- Write a simple worker (worker.py)
+- Write a simple service (worker.py)
+
 ```
 from rdisq.service import RdisqService, remote_method
 from rdisq.redis_dispatcher import PoolRedisDispatcher
 
-
-class MyClass(RdisqService):
+class MyService(RdisqService):
     service_name = "my_service"
     response_timeout = 10 # seconds
     redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
 
     @remote_method
     def do_work(self, param1, param2, param3=None):
-        # Just return a simple dict, but technically we can do w/e we like here
-        data = {
-            "first": param1,
-            "second": param2,
-            "key_arg": param3,
-            }
-        return data
-
-    @remote_method
-    def add_num(self, a, b):
-        return a + b
-
-# We can instantiate our worker right away
-# Since this is an example, lets also start the blocking processing loop here
+        # Add your code here, return normally as if its the same program
+        return "%s, %s and %s" % (param1, param2, param3)
+```
+- Lets invoke the service's blocking loop so it can start to process.
+```
+from worker import MyService
 if __name__ == '__main__':
-    MyWorker().process() # Blocking loop
-    
+    MyService().process() # Blocking loop
 ```
-
-Get the remote consumer inside another python process
-
+- In another python interpreter, we can call the remote method
 ```
-from worker import MyClass
+from worker import MyService
 
-print MyClass.get_consumer().do_work("p1", "sasfas", param3="a")  # prints '''{"first":"p1", "seconds":"sasfas", "key_arg":"a"}'''
+consumer = MyService.get_consumer()
+returned = consumer.do_work("Foo", "Bar", param3="Pow") # will return the string "Foo, Bar and Pow"
+```
+- If wanted, an async call can also be made
+```
+from worker import MyService
 
-# We can also call the async one and get a callback object
-response = MyClass.get_async_consumer().do_work("p1", "sasfas") # returns a Response object
-print response.wait() # blocks until a response (or a timeout), prints '''{"first":"p1", "seconds":"sasfas", "key_args":None}'''
+consumer = MyService.get_async_consumer()
+async_response = consumer.do_work("Foo", "Bar", param3="Pow") # will return an async response object
 
+if async_response.is_processed():
+    print "We've got a response back!"
+    if async_response.is_exception():
+        print "... but it was an exception :/"
+        raise async_response.exception
+
+async_respones.wait() # will auto-raise the remote exception if one was raise in the remote_method's body.
 ```
