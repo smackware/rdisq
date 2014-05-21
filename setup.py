@@ -10,7 +10,7 @@ def read(fname):
 
 setup(
     name = "rdisq",
-    version = "0.0.3",
+    version = "0.0.4",
     author = "Lital Natan",
     author_email = "litaln@gmail.com",
     description = ("Super minimal workload distribution framework over redis queues"),
@@ -18,7 +18,7 @@ setup(
     install_requires = ["redis"],
     keywords = "",
     packages=find_packages(),
-    long_description=read('README.md'),
+    long_description="Please see README.md",
     classifiers=[
     ],
 )
