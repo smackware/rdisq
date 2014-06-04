@@ -3,10 +3,6 @@ __author__ = 'smackware'
 import time
 
 
-from payload import ResponsePayload
-from serialization import decode
-
-
 class RdisqResponseTimeout(Exception):
     task_id = None
 
@@ -57,7 +53,7 @@ class RdisqResponse(object):
             raise RdisqResponseTimeout(self._task_id)
         queue_name, response = redis_response
         self.total_time_seconds = time.time() - self.called_at_unixtime
-        response_payload = decode(response)
+        response_payload = self.rdisq_consumer.service_class.serializer.loads(response)
         redis_con.delete(self._task_id)
         self.response_payload = response_payload
         if self.is_exception():
