@@ -52,7 +52,7 @@ class RdisqService(object):
 
     def __init__(self):
         if self.service_name is None:
-            self.service_name = self.__generate_service_name_from_child_class()
+            self.__set_service_name(self.__generate_service_name_from_child_class())
         if self.redis_dispatcher is None:
             raise NotImplementedError(MISSING_DISPATCHER_ERROR_TEXT)
         if self.serializer is None:
@@ -61,6 +61,10 @@ class RdisqService(object):
         self.__queue_to_callable = None
         self.async = None
         self.__map_exposed_methods_to_queues()
+
+    @classmethod
+    def __set_service_name(cls, service_name):
+        cls.service_name = service_name
 
     def __map_exposed_methods_to_queues(self):
         self.__queue_to_callable = self.get_queue_name_to_exposed_method_mapping()
