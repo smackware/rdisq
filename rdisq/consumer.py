@@ -1,11 +1,6 @@
 __author__ = 'smackware'
 
-
-from . import EXPORTED_METHOD_PREFIX
-from payload import ResponsePayload
 from payload import RequestPayload
-
-from serialization import encode
 
 from identification import generate_task_id
 from identification import get_request_key
@@ -50,7 +45,8 @@ class AbstractRdisqConsumer(object):
             timeout=timeout
         )
         request_key = get_request_key(task_id)
-        redis_con.setex(request_key, encode(request_payload), timeout)
+        serialized_request = self.service_class.serializer.dumps(request_payload)
+        redis_con.setex(request_key, serialized_request, timeout)
         redis_con.lpush(method_queue_name, task_id)
         return RdisqResponse(task_id, self)
 
