@@ -7,7 +7,6 @@ class GrumpyException(Exception):
 
 
 class MyClass(RdisqService):
-    service_name = "my_service"
     response_timeout = 10 # seconds
     redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
 
@@ -33,7 +32,6 @@ class MyClass(RdisqService):
     @remote_method
     def grumpy():
         raise GrumpyException("I'M ALWAYS GRUMPY!")
-
 
 
 if __name__ == '__main__':

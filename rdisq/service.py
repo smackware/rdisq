@@ -14,31 +14,50 @@ from payload import RequestPayload
 from payload import ResponsePayload
 
 from identification import get_request_key
-from serialization import encode, decode
+from serialization import PickleSerializer
 
 from redis_dispatcher import LocalRedisDispatcher
 from consumer import RdisqAsyncConsumer
 from consumer import RdisqWaitingConsumer
 
+
 # Decorator
-def remote_method(callable):
-    callable.is_remote = True
-    return callable
+def remote_method(callable_object):
+    callable_object.is_remote = True
+    return callable_object
 
 
 class RdisqService(object):
+    """
+    Inheritance example:
+    =============================================
+    class CalculatorService(RdisqService):
+        service_name = "CalculatorService"
+        redis_dispatcher = LocalRedisDispatcher()
+
+        @remote_method
+        def add(self, a, b):
+            return a + b;
+    =============================================
+    """
+    logger = None
+    log_returned_exceptions = True
     service_name = None
     response_timeout = 10
     redis_dispatcher = None
+    serializer = None
     __go = True
-    __waiting_consumer = None
+    __sync_consumer = None
     __async_consumer = None
 
     def __init__(self):
         if self.service_name is None:
-            raise NotImplementedError(MISSING_SERVICE_NAME_ERROR_TEXT)
+            self.service_name = self.__generate_service_name_from_child_class()
         if self.redis_dispatcher is None:
             raise NotImplementedError(MISSING_DISPATCHER_ERROR_TEXT)
+        if self.serializer is None:
+            # Defaulting to pickle
+            self.serializer = PickleSerializer()
         self.__queue_to_callable = None
         self.async = None
         self.__map_exposed_methods_to_queues()
@@ -48,6 +67,8 @@ class RdisqService(object):
         if not self.__queue_to_callable:
             raise AttributeError("Cannot instantiate a service with no exposed methods")
 
+    def __generate_service_name_from_child_class(self):
+        return "%s.%s" % (self.__class__.__module__, self.__class__.__name__, )
 
     @classmethod
     def get_method_if_exists(cls, name):
@@ -80,9 +101,9 @@ class RdisqService(object):
 
     @classmethod
     def get_consumer(cls):
-        if cls.__waiting_consumer is None:
-            cls.__waiting_consumer = RdisqWaitingConsumer(cls)
-        return cls.__waiting_consumer
+        if cls.__sync_consumer is None:
+            cls.__sync_consumer = RdisqWaitingConsumer(cls)
+        return cls.__sync_consumer
 
     @classmethod
     def get_async_consumer(cls):
@@ -105,10 +126,6 @@ class RdisqService(object):
             return method_name[len(EXPORTED_METHOD_PREFIX):]
         return method_name
 
-    def init(self, *args, **kwargs):
-        """Run on instatiation, use this instead of __init__"""
-        pass
-
     def pre(self, method_queue_name):
         """Performs after something was found in the queue"""
         pass
@@ -117,8 +134,8 @@ class RdisqService(object):
         """Performs after a queue fetch and process"""
         pass
 
-    def exception_handler(self, e):
-        raise e
+    def on_exception(self, exc):
+        pass
 
     def on_start(self):
         pass
@@ -138,7 +155,7 @@ class RdisqService(object):
         if data_string is None:
             return
         self.pre(method_queue_name)
-        request_payload = decode(data_string)
+        request_payload = self.serializer.loads(data_string)
         timeout = request_payload.timeout
         if request_payload.task_id != task_id:
             raise ValueError("Memorized task id is mismatching to received-payload task_id")
@@ -151,14 +168,17 @@ class RdisqService(object):
         except Exception as ex:
             result = None
             raised_exception = ex
+            if self.log_returned_exceptions and self.logger:
+                self.logger.exception(ex)
+            self.on_exception(ex)
         duration_seconds = time.time() - time_start
         response_payload = ResponsePayload(
             returned_value=result,
             processing_time_seconds=duration_seconds,
             raised_exception=raised_exception
         )
-        response_string = encode(response_payload)
-        redis_con.lpush(task_id, response_string)
+        serialized_response = self.serializer.dumps(response_payload)
+        redis_con.lpush(task_id, serialized_response)
         redis_con.expire(task_id, timeout)
         self.post(method_queue_name)
 

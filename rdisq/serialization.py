@@ -7,9 +7,19 @@ except ImportError:
     from pickle import loads, dumps
 
 
-def encode(obj):
-    return dumps(obj)
+class AbstractSerializer(object):
+    def dumps(self, obj):
+        raise NotImplementedError("encode is not implemented")
+
+    def loads(self, obj):
+        raise NotImplementedError("decode is not implemented")
 
 
-def decode(data):
-    return loads(data)
+class PickleSerializer(object):
+    @staticmethod
+    def dumps(obj):
+        return dumps(obj)
+
+    @staticmethod
+    def loads( data):
+        return loads(data)
