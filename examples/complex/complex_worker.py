@@ -6,6 +6,7 @@ from rdisq.redis_dispatcher import PoolRedisDispatcher
 class Worker(RdisqService):
     logger = logging.getLogger(__name__)
     log_returned_exceptions = True
+    service_name = "Worker"
     response_timeout = 5
     stop_on_fail = False
     redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)

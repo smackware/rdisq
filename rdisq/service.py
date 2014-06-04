@@ -5,8 +5,8 @@ import time
 
 MISSING_DISPATCHER_ERROR_TEXT = \
     "Service class must have a 'redis_dispatcher' attribute pointing to a RedisDispatcher instance"
-MISSING_SERVICE_NAME_ERROR_TEXT = \
-    "Missing service_name class attribute"
+MISSING_SERVICE_NAME_IN_MAIN_ERROR_TEXT = \
+    "When instantiating a service in __main__, the service_name class attribute must be set"
 
 from . import EXPORTED_METHOD_PREFIX
 
@@ -53,6 +53,8 @@ class RdisqService(object):
     def __init__(self):
         if self.redis_dispatcher is None:
             raise NotImplementedError(MISSING_DISPATCHER_ERROR_TEXT)
+        if self.__class__.__module__ == '__main__' and self.service_name is None:
+            raise NotImplementedError(MISSING_SERVICE_NAME_IN_MAIN_ERROR_TEXT)
         self.__queue_to_callable = None
         self.async = None
         self.__map_exposed_methods_to_queues()
@@ -64,7 +66,7 @@ class RdisqService(object):
     @classmethod
     def get_service_name(cls):
         if cls.service_name is None:
-            cls.service_name = cls.__name__
+            cls.service_name = "%s.%s" % (cls.__module__, cls.__name__)
         return cls.service_name
 
     def __map_exposed_methods_to_queues(self):

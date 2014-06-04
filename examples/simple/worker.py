@@ -7,6 +7,7 @@ class GrumpyException(Exception):
 
 
 class MyClass(RdisqService):
+    service_name = "MyClass"
     response_timeout = 10 # seconds
     redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
 
