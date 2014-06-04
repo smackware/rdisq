@@ -45,19 +45,14 @@ class RdisqService(object):
     service_name = None
     response_timeout = 10
     redis_dispatcher = None
-    serializer = None
+    serializer = PickleSerializer()
     __go = True
     __sync_consumer = None
     __async_consumer = None
 
     def __init__(self):
-        if self.service_name is None:
-            self.__set_service_name(self.__generate_service_name_from_child_class())
         if self.redis_dispatcher is None:
             raise NotImplementedError(MISSING_DISPATCHER_ERROR_TEXT)
-        if self.serializer is None:
-            # Defaulting to pickle
-            self.serializer = PickleSerializer()
         self.__queue_to_callable = None
         self.async = None
         self.__map_exposed_methods_to_queues()
@@ -66,13 +61,16 @@ class RdisqService(object):
     def __set_service_name(cls, service_name):
         cls.service_name = service_name
 
+    @classmethod
+    def get_service_name(cls):
+        if cls.service_name is None:
+            cls.service_name = cls.__name__
+        return cls.service_name
+
     def __map_exposed_methods_to_queues(self):
         self.__queue_to_callable = self.get_queue_name_to_exposed_method_mapping()
         if not self.__queue_to_callable:
             raise AttributeError("Cannot instantiate a service with no exposed methods")
-
-    def __generate_service_name_from_child_class(self):
-        return "%s.%s" % (self.__class__.__module__, self.__class__.__name__, )
 
     @classmethod
     def get_method_if_exists(cls, name):
@@ -121,7 +119,7 @@ class RdisqService(object):
 
     @classmethod
     def get_queue_name_for_method(cls, method_name):
-        return cls.service_name + "_" + method_name
+        return cls.get_service_name() + "_" + method_name
 
     @classmethod
     def chop_prefix_from_exported_method_name(cls, method_name):

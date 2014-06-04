@@ -21,7 +21,7 @@ class Worker(RdisqService):
         print log_line 
 
     def on_start(self):
-        print "Service started!"
+        print "Service started: %s!" % (self.service_name, )
     
     def pre(self, q):
         print "Processing from %s" % (q, )
