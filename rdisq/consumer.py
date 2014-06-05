@@ -35,7 +35,6 @@ class AbstractRdisqConsumer(object):
             raise AttributeError("Cannot instantiate a consumer with no exposed methods")
 
     def send(self, method_queue_name, *args, **kwargs):
-        print method_queue_name
         timeout = kwargs.pop("timeout", self.service_class.response_timeout)
         redis_con = self.service_class.redis_dispatcher.get_redis()
         task_id = method_queue_name + generate_task_id()
