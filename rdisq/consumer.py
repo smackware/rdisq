@@ -1,11 +1,11 @@
 __author__ = 'smackware'
 
-from payload import RequestPayload
+from .payload import RequestPayload
 
-from identification import generate_task_id
-from identification import get_request_key
+from .identification import generate_task_id
+from .identification import get_request_key
 
-from response import RdisqResponse
+from .response import RdisqResponse
 
 
 class RdisqAsyncConsumer(object):
@@ -46,7 +46,7 @@ class AbstractRdisqConsumer(object):
         )
         request_key = get_request_key(task_id)
         serialized_request = self.service_class.serializer.dumps(request_payload)
-        redis_con.setex(request_key, serialized_request, timeout)
+        redis_con.setex(request_key, timeout, serialized_request)
         redis_con.lpush(method_queue_name, task_id)
         return RdisqResponse(task_id, self)
 

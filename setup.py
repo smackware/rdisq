@@ -10,12 +10,12 @@ def read(fname):
 
 setup(
     name = "rdisq",
-    version = "0.0.4",
+    version = "0.0.8",
     author = "Lital Natan",
     author_email = "litaln@gmail.com",
     description = ("Super minimal workload distribution framework over redis queues"),
     license = "As stated on github",
-    install_requires = ["redis"],
+    install_requires = ["redis>=3.3.11"],
     keywords = "",
     packages=find_packages(),
     long_description="Please see README.md",

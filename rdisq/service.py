@@ -10,15 +10,15 @@ MISSING_SERVICE_NAME_IN_MAIN_ERROR_TEXT = \
 
 from . import EXPORTED_METHOD_PREFIX
 
-from payload import RequestPayload
-from payload import ResponsePayload
+from .payload import RequestPayload
+from .payload import ResponsePayload
 
-from identification import get_request_key
-from serialization import PickleSerializer
+from .identification import get_request_key
+from .serialization import PickleSerializer
 
-from redis_dispatcher import LocalRedisDispatcher
-from consumer import RdisqAsyncConsumer
-from consumer import RdisqWaitingConsumer
+from .redis_dispatcher import LocalRedisDispatcher
+from .consumer import RdisqAsyncConsumer
+from .consumer import RdisqWaitingConsumer
 
 
 # Decorator
@@ -58,6 +58,14 @@ class RdisqService(object):
         self.__queue_to_callable = None
         self.async = None
         self.__map_exposed_methods_to_queues()
+
+    @property
+    def rdisq_go(self):
+        return self.__go
+
+    def rdisq_process_one(self):
+        self.__process_one()
+        
 
     @classmethod
     def __set_service_name(cls, service_name):
@@ -153,15 +161,15 @@ class RdisqService(object):
         if redis_result is None:  # Timeout
             return
         method_queue_name, task_id = redis_result
-        request_key = get_request_key(task_id)
-        call = self.__queue_to_callable[method_queue_name]
+        request_key = get_request_key(task_id.decode())
+        call = self.__queue_to_callable[method_queue_name.decode()]
         data_string = redis_con.get(request_key)
         if data_string is None:
             return
         self.pre(method_queue_name)
         request_payload = self.serializer.loads(data_string)
         timeout = request_payload.timeout
-        if request_payload.task_id != task_id:
+        if request_payload.task_id != task_id.decode():
             raise ValueError("Memorized task id is mismatching to received-payload task_id")
         args = request_payload.args
         kwargs = request_payload.kwargs
