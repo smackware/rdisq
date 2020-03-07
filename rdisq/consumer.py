@@ -28,14 +28,15 @@ class AbstractRdisqConsumer(object):
             if not self.service_class.is_remote_method(call):
                 continue
             stub_method_name = self.service_class.chop_prefix_from_exported_method_name(attr)
-            method_queue_name = self.service_class.get_queue_name_for_method(stub_method_name)
-            setattr(self, stub_method_name, self.get_stub_method(method_queue_name))
-            self.__queue_to_callable[method_queue_name] = call
+            setattr(self, stub_method_name, self.get_stub_method(stub_method_name))
+            self.__queue_to_callable[stub_method_name] = call
         if not self.__queue_to_callable:
             raise AttributeError("Cannot instantiate a consumer with no exposed methods")
 
-    def send(self, method_queue_name, *args, **kwargs):
+    def send(self, method_name, *args, **kwargs):
         timeout = kwargs.pop("timeout", self.service_class.response_timeout)
+        uid = kwargs.pop("rdisq_uid", None)
+        method_queue_name = self.service_class.get_queue_name_for_method(method_name, uid)
         redis_con = self.service_class.redis_dispatcher.get_redis()
         task_id = method_queue_name + generate_task_id()
         request_payload = RequestPayload(
@@ -50,19 +51,19 @@ class AbstractRdisqConsumer(object):
         redis_con.lpush(method_queue_name, task_id)
         return RdisqResponse(task_id, self)
 
-    def get_stub_method(self, method_queue_name):
+    def get_stub_method(self, method_name):
         raise NotImplementedError()
 
 
 class RdisqAsyncConsumer(AbstractRdisqConsumer):
-    def get_stub_method(self, method_queue_name):
+    def get_stub_method(self, method_name):
         def c(*args, **kwargs):
-            return self.send(method_queue_name, *args, **kwargs)
+            return self.send(method_name, *args, **kwargs)
         return c
 
 
 class RdisqWaitingConsumer(AbstractRdisqConsumer):
-    def get_stub_method(self, method_queue_name):
+    def get_stub_method(self, method_name):
         def c(*args, **kwargs):
-            return self.send(method_queue_name, *args, **kwargs).wait()
+            return self.send(method_name, *args, **kwargs).wait()
         return c

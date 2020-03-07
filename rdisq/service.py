@@ -1,6 +1,7 @@
 __author__ = 'smackware'
 
 import time
+import uuid
 
 
 MISSING_DISPATCHER_ERROR_TEXT = \
@@ -50,13 +51,13 @@ class RdisqService(object):
     __sync_consumer = None
     __async_consumer = None
 
-    def __init__(self):
+    def __init__(self, uid=None):
         if self.redis_dispatcher is None:
             raise NotImplementedError(MISSING_DISPATCHER_ERROR_TEXT)
         if self.__class__.__module__ == '__main__' and self.service_name is None:
             raise NotImplementedError(MISSING_SERVICE_NAME_IN_MAIN_ERROR_TEXT)
+        self.__uid = uid or str(uuid.uuid4())
         self.__queue_to_callable = None
-        self.async = None
         self.__map_exposed_methods_to_queues()
 
     @property
@@ -65,7 +66,7 @@ class RdisqService(object):
 
     def rdisq_process_one(self):
         self.__process_one()
-        
+
 
     @classmethod
     def __set_service_name(cls, service_name):
@@ -109,6 +110,8 @@ class RdisqService(object):
             stub_method_name = self.chop_prefix_from_exported_method_name(attr)
             method_queue_name = self.get_queue_name_for_method(stub_method_name)
             mapping[method_queue_name] = call
+            method_queue_name = self.get_queue_name_for_method(stub_method_name, self.__uid)
+            mapping[method_queue_name] = call
         return mapping
 
     @classmethod
@@ -123,14 +126,17 @@ class RdisqService(object):
             cls.__async_consumer = RdisqAsyncConsumer(cls)
         return cls.__async_consumer
 
-    def get_redis(self):
-        return self.redis_dispatcher.get_redis()
+    @classmethod
+    def get_redis(cls):
+        return cls.redis_dispatcher.get_redis()
 
 
     @classmethod
-    def get_queue_name_for_method(cls, method_name):
+    def get_queue_name_for_method(cls, method_name, prefix=None):
+        if prefix is not None:
+            return prefix + "_" +cls.get_service_name() + "_" + method_name
         return cls.get_service_name() + "_" + method_name
-
+        
     @classmethod
     def chop_prefix_from_exported_method_name(cls, method_name):
         # Legacy compatibility, remote methods used to be prefixed with 'q_'
@@ -194,10 +200,28 @@ class RdisqService(object):
         redis_con.expire(task_id, timeout)
         self.post(method_queue_name)
 
+    @classmethod
+    def get_service_uid_list_key(cls):
+        return "rdisq_uids:" + cls.get_service_name()
+
+    @classmethod
+    def list_uids(cls):
+        uids = []
+        rdb = cls.get_redis()
+        key = cls.get_service_uid_list_key()
+        for k,v in rdb.hgetall(key).items():
+            if float(v) > time.time() - 10:
+                uids.append(k.decode())
+            else:
+                rdb.hdel(key, k)
+        return uids
+
     def process(self):
         self.on_start()
+        redis_con = self.get_redis()
         while self.__go:
-            self.__process_one()
+            self.__process_one(1)
+            redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
 
     def stop(self):
         self.__go = False
