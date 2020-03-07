@@ -89,3 +89,18 @@ if async_response.is_processed():
 # We still need to call ".wait()" to process the response data.
 async_respones.wait() # will auto-raise the remote exception if one was raise in the remote_method's body.
 ```
+
+Sending to a specific worker
+-----------
+
+Each worker has its own unique id
+
+To check which workers are currently online:
+```
+MyService.list_uids() # Result => ['3a995ceb-5b86-41ed-8154-b1407661228f', '69c93e53-9913-4a7e-b3e8-55a5208aca8d']
+```
+
+To call an RPC of a specific worker use the 'rdisq_uid=' keyword argument:
+```
+MyService.get_consumer().do_work(1,2,3, rdisq_uid='3a995ceb-5b86-41ed-8154-b1407661228f')
+```
