@@ -45,6 +45,7 @@ class RdisqService(object):
     log_returned_exceptions = True
     service_name = None
     response_timeout = 10
+    polling_timeout = 1
     redis_dispatcher = None
     serializer = PickleSerializer()
     __go = True
@@ -220,7 +221,7 @@ class RdisqService(object):
         self.on_start()
         redis_con = self.get_redis()
         while self.__go:
-            self.__process_one(1)
+            self.__process_one(self.polling_timeout)
             redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
 
     def stop(self):
