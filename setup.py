@@ -14,11 +14,15 @@ setup(
     author = "Lital Natan",
     author_email = "litaln@gmail.com",
     description = ("Super minimal workload distribution framework over redis queues"),
-    license = "As stated on github",
+    license = "MIT",
     install_requires = ["redis>=3.3.11"],
     keywords = "",
     packages=find_packages(),
     long_description="Please see README.md",
+    url="https://github.com/smackware/rdisq",
     classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
     ],
 )
