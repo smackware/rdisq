@@ -59,15 +59,23 @@ class RdisqService(object):
             raise NotImplementedError(MISSING_SERVICE_NAME_IN_MAIN_ERROR_TEXT)
         self.__uid = uid or str(uuid.uuid4())
         self.__queue_to_callable = None
+        self.__broadcast_queues = None
+        self.__direct_queues = None
         self.__map_exposed_methods_to_queues()
+        self.__is_suspended = False
 
     @property
-    def rdisq_go(self):
+    def is_active(self):
         return self.__go
 
     def rdisq_process_one(self):
         self.__process_one()
 
+    def suspend(self):
+        self.__is_suspended = True
+
+    def resume(self):
+        self.__is_suspended = False
 
     @classmethod
     def __set_service_name(cls, service_name):
@@ -80,7 +88,7 @@ class RdisqService(object):
         return cls.service_name
 
     def __map_exposed_methods_to_queues(self):
-        self.__queue_to_callable = self.get_queue_name_to_exposed_method_mapping()
+        self.__queue_to_callable, self.__broadcast_queues, self.__direct_queues = self.get_queue_name_to_exposed_method_mapping()
         if not self.__queue_to_callable:
             raise AttributeError("Cannot instantiate a service with no exposed methods")
 
@@ -104,6 +112,8 @@ class RdisqService(object):
 
     def get_queue_name_to_exposed_method_mapping(self):
         mapping = {}
+        broadcast_queues = []
+        direct_queues = []
         for attr in dir(self):
             call = getattr(self, attr)
             if not self.is_remote_method(call):
@@ -111,9 +121,11 @@ class RdisqService(object):
             stub_method_name = self.chop_prefix_from_exported_method_name(attr)
             method_queue_name = self.get_queue_name_for_method(stub_method_name)
             mapping[method_queue_name] = call
+            broadcast_queues.append(method_queue_name)
             method_queue_name = self.get_queue_name_for_method(stub_method_name, self.__uid)
             mapping[method_queue_name] = call
-        return mapping
+            direct_queues.append(method_queue_name)
+        return mapping, broadcast_queues, direct_queues
 
     @classmethod
     def get_consumer(cls):
@@ -164,7 +176,10 @@ class RdisqService(object):
         Will pend for an event (unless timeout is specified) then it will process it
         """
         redis_con = self.get_redis()
-        redis_result = redis_con.brpop(self.__queue_to_callable.keys(), timeout=timeout)
+        queues = list(self.__direct_queues)
+        if not self.__is_suspended:
+            queues += list(self.__broadcast_queues)
+        redis_result = redis_con.brpop(queues, timeout=timeout)
         if redis_result is None:  # Timeout
             return
         method_queue_name, task_id = redis_result
