@@ -22,9 +22,9 @@ class MyClass(RdisqService):
     def build(self, what, tool=None):
         # Showing here that args and kwargs can be used
         if tool is not None:
-            print "%s: I built you %s, using a %s" % (self.service_name, what, tool,)
+            print("%s: I built you %s, using a %s" % (self.service_name, what, tool,))
         else:
-            print "%s: I built you %s, using a my bear [sic] hands" % (self.service_name, what, )
+            print("%s: I built you %s, using a my bear [sic] hands" % (self.service_name, what, ))
     
         # Return a dict, just to spice things up a bit
         return {"message from the worker": "I'm done!"}

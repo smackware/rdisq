@@ -6,3 +6,4 @@ nohup.out
 /build
 /dist
 /rdisq.egg-info
+/virtualenv

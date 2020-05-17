@@ -65,6 +65,11 @@ class RdisqService(object):
         self.__is_suspended = False
 
     @property
+    def uid(self):
+        """Returns the unique id of this service instance"""
+        return self.__uid
+
+    @property
     def is_active(self):
         return self.__go
 
