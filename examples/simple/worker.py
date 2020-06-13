@@ -6,10 +6,10 @@ class GrumpyException(Exception):
     pass
 
 
-class MyClass(RdisqService):
+class SimpleWorker(RdisqService):
     service_name = "MyClass"
     response_timeout = 10 # seconds
-    redis_dispatcher = PoolRedisDispatcher(host='localhost', port=6379, db=0)
+    redis_dispatcher = PoolRedisDispatcher(host='127.0.0.1', port=6379, db=0)
 
 
     @staticmethod
@@ -36,5 +36,5 @@ class MyClass(RdisqService):
 
 
 if __name__ == '__main__':
-    myClass = MyClass()
+    myClass = SimpleWorker()
     myClass.process()
