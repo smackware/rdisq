@@ -1,6 +1,12 @@
 __author__ = 'smackware'
 
+from typing import *
 import time
+
+
+if TYPE_CHECKING:
+    from rdisq.payload import ResponsePayload
+    from rdisq.consumer import AbstractRdisqConsumer
 
 
 class RdisqResponseTimeout(Exception):
@@ -12,13 +18,16 @@ class RdisqResponseTimeout(Exception):
 
 class RdisqResponse(object):
     _task_id = None
-    rdisq_consumer = None
-    response_payload = None
+    rdisq_consumer: "AbstractRdisqConsumer"
+    response_payload: "ResponsePayload" = None
     total_time_seconds = None
     called_at_unixtime = None
     timeout = None
     exception = None
-    returned_value = None
+
+    @property
+    def returned_value(self):
+        return self.response_payload.returned_value
 
     def __init__(self, task_id, rdisq_consumer):
         self._task_id = task_id
@@ -45,10 +54,11 @@ class RdisqResponse(object):
     def exception(self):
         return self.response_payload.raised_exception
 
-    def wait(self):
-        timeout = self.get_service_timeout()
+    def wait(self, timeout=None):
+        if not timeout:
+            timeout = self.get_service_timeout()
         redis_con = self.rdisq_consumer.service_class.redis_dispatcher.get_redis()
-        redis_response = redis_con.brpop(self._task_id, timeout=timeout)  # can be tuple of (queue_name, string) or None
+        redis_response = redis_con.brpop(self._task_id, timeout=timeout)  # can be tuple of (queue_base_name, string) or None
         if redis_response is None:
             raise RdisqResponseTimeout(self._task_id)
         queue_name, response = redis_response

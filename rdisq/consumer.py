@@ -1,11 +1,15 @@
 __author__ = 'smackware'
 
+from typing import *
 from .payload import RequestPayload
 
 from .identification import generate_task_id
 from .identification import get_request_key
 
 from .response import RdisqResponse
+
+if TYPE_CHECKING:
+    from .service import RdisqService
 
 
 class RdisqAsyncConsumer(object):
@@ -14,7 +18,7 @@ class RdisqAsyncConsumer(object):
 
 
 class AbstractRdisqConsumer(object):
-    service_class = None
+    service_class: "RdisqService"
 
     def __init__(self, service_class):
         self.__queue_to_callable = None
@@ -30,8 +34,6 @@ class AbstractRdisqConsumer(object):
             stub_method_name = self.service_class.chop_prefix_from_exported_method_name(attr)
             setattr(self, stub_method_name, self.get_stub_method(stub_method_name))
             self.__queue_to_callable[stub_method_name] = call
-        if not self.__queue_to_callable:
-            raise AttributeError("Cannot instantiate a consumer with no exposed methods")
 
     def send(self, method_name, *args, **kwargs):
         timeout = kwargs.pop("timeout", self.service_class.response_timeout)
@@ -47,6 +49,8 @@ class AbstractRdisqConsumer(object):
         )
         request_key = get_request_key(task_id)
         serialized_request = self.service_class.serializer.dumps(request_payload)
+        # todo -- ask lital why he isn't passing the serialized_request inside the lpush?
+        # wouldn't that save a network call?
         redis_con.setex(request_key, timeout, serialized_request)
         redis_con.lpush(method_queue_name, task_id)
         return RdisqResponse(task_id, self)

@@ -9,7 +9,7 @@ class AbstractRedisDispatcher(object):
     def __init__(self, *args, **kwargs):
         pass
 
-    def get_redis(self, *args, **kwargs):
+    def get_redis(self, *args, **kwargs)->Redis:
         """
         Produce an instance of an active redis connection
         """

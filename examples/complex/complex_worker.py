@@ -22,17 +22,17 @@ class ComplexWorker(RdisqService):
         print(log_line)
         return log_line
 
-    def on_start(self):
+    def _on_start(self):
         val = "Service started: %s!" % (self.service_name,)
         print(val)
         return  val
 
-    def pre(self, q):
+    def _pre(self, q):
         val = "Processing from %s" % (q,)
         print(val)
         return val
 
-    def post(self, q):
+    def _post(self, q):
         val = "Finished processing from %s" % (q,)
         print(val)
         return val
