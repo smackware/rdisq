@@ -21,7 +21,13 @@ class Call:
         else:
             raise RuntimeError("not supposed to try to get results before the message was sent")
 
-    def send(self, timeout=None):
+    def send(self, timeout=None)->Any:
+        """
+        Send the message and wait for a reply.
+
+        :param timeout: How long to wait for reply .
+        :return: The returned value of the remote method.
+        """
         self.send_async()
         return self._response.wait(timeout)
 

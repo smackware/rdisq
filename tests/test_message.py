@@ -5,7 +5,8 @@ from redis import Redis
 
 from rdisq.remote_call.call import Call
 from rdisq.remote_call.message import RdisqMessage, MessageRequestData
-from rdisq.remote_call.receiver import ReceiverService, StartHandlingMessages, StopHandlingMessages
+from rdisq.remote_call.receiver import (
+    ReceiverService, StartHandling, StopHandling, GetRegisteredMessages)
 from rdisq.response import RdisqResponseTimeout
 
 
@@ -56,8 +57,8 @@ class SumMessage(RdisqMessage):
 
 
 class Summer:
-    def __init__(self):
-        self.sum = 0
+    def __init__(self, start: int = 0):
+        self.sum = start
 
     @SumMessage.set_handler
     def add(self, new):
@@ -126,19 +127,31 @@ def test_dynamic_service(flush_redis):
 
     receiver_service.stop()
 
+
 def test_service_control_messages(flush_redis):
     receiver_service = ReceiverService()
     Thread(group=None, target=receiver_service.process).start()
 
-    Call(StartHandlingMessages(AddMessage)).send()
-    assert Call(AddMessage(1, 2)).send() == 3
-    Call(StopHandlingMessages(AddMessage)).send()
+    assert Call(message=StartHandling(new_message_class=AddMessage)).send() == {
+        GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
+
+    assert receiver_service.get_registered_messages() == {
+        GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
+    assert Call(message=GetRegisteredMessages()).send() == {
+        GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
+    assert Call(message=AddMessage(1, 2)).send() == 3
+    Call(message=StopHandling(old_message_class=AddMessage)).send()
 
     try:
-        Call(AddMessage(1, 2)).send(1)
+        Call(message=AddMessage(1, 2)).send(1)
     except RdisqResponseTimeout:
         pass
     else:
         raise RuntimeError("Should have failed communicating with worker")
+
+    SumMessage.set_handler_instance_factory(lambda start: Summer(start))
+    assert Call(message=StartHandling(new_message_class=SumMessage, new_handler_kwargs={"start": 1})).send() == {
+        GetRegisteredMessages, StartHandling, StopHandling, SumMessage}
+    assert Call(SumMessage(3)).send() == 4
 
     receiver_service.stop()

@@ -150,6 +150,13 @@ class RdisqService(object):
         """Returns the unique id of this service instance"""
         return self.__uid
 
+    @property
+    def callables(self) -> FrozenSet[Callable]:
+        """
+        :return: A set of all the callables that might be triggered by messages to this Service's queues.
+        """
+        return frozenset(self.__queue_to_callable.values())
+
     def rdisq_process_one(self):
         self.__process_one()
 
