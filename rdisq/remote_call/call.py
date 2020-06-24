@@ -36,6 +36,6 @@ class Call:
         self._sent = True
         self._response = ReceiverService.get_consumer().send(
             self.message.get_message_class_id(),
-            **self.message.__dict__
+            self.message
         )
         return self.response

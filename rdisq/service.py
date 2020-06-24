@@ -6,7 +6,7 @@ import uuid
 
 if TYPE_CHECKING:
     from redis import Redis
-    from .redis_dispatcher import LocalRedisDispatcher, AbstractRedisDispatcher
+    from .redis_dispatcher import AbstractRedisDispatcher
 
 MISSING_DISPATCHER_ERROR_TEXT = \
     "Service class must have a 'redis_dispatcher' attribute pointing to a RedisDispatcher instance"
@@ -192,6 +192,7 @@ class RdisqService(object):
         while self.__go:
             self.__process_one(self.polling_timeout)
             redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
+            self._on_process_loop()
 
     def stop(self):
         self.__go = False
@@ -208,6 +209,10 @@ class RdisqService(object):
         pass
 
     def _on_start(self):
+        pass
+
+    def _on_process_loop(self):
+        """Hook for doing stuff each cycle of the loop that waits for new messages in the queue"""
         pass
 
     def __map_exposed_methods_to_queues(self):

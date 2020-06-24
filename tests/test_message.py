@@ -5,6 +5,7 @@ from redis import Redis
 
 from rdisq.remote_call.call import Call
 from rdisq.remote_call.message import RdisqMessage, MessageRequestData
+from rdisq.remote_call.message_dispatcher import MessageDispatcher
 from rdisq.remote_call.receiver import (
     ReceiverService, StartHandling, StopHandling, GetRegisteredMessages)
 from rdisq.response import RdisqResponseTimeout
@@ -111,14 +112,14 @@ def test_dynamic_service(flush_redis):
     except RdisqResponseTimeout:
         pass
     else:
-        raise RuntimeError("Should have failed communicating with worker")
+        raise RuntimeError("Should have failed communicating with receiver")
 
     try:
         Call(SumMessage(1)).send(1)
     except RdisqResponseTimeout:
         pass
     else:
-        raise RuntimeError("Should have failed communicating with worker")
+        raise RuntimeError("Should have failed communicating with receiver")
 
     receiver_service.register_message(SumMessage, summer)
     Call(SumMessage(1)).send()
@@ -132,26 +133,36 @@ def test_service_control_messages(flush_redis):
     receiver_service = ReceiverService()
     Thread(group=None, target=receiver_service.process).start()
 
-    assert Call(message=StartHandling(new_message_class=AddMessage)).send() == {
-        GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
+    assert Call(StartHandling(AddMessage)).send() == {GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
+    try:
+        Call(StartHandling(AddMessage)).send()
+    except Exception:
+        pass
+    else:
+        raise RuntimeError("Should have failed to re-add a message to a receiver.")
 
-    assert receiver_service.get_registered_messages() == {
-        GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
-    assert Call(message=GetRegisteredMessages()).send() == {
-        GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
-    assert Call(message=AddMessage(1, 2)).send() == 3
-    Call(message=StopHandling(old_message_class=AddMessage)).send()
+    dispatcher = MessageDispatcher(host='127.0.0.1', port=6379, db=0)
+    receivers_from_redis = dispatcher.get_receiver_services()
+    assert receivers_from_redis[receiver_service.uid].registered_messages == {GetRegisteredMessages, StartHandling, StopHandling,
+                                                            AddMessage}
+    assert receivers_from_redis[receiver_service.uid].uid == receiver_service.uid
+
+    assert receiver_service.get_registered_messages() == {GetRegisteredMessages, StartHandling, StopHandling,
+                                                          AddMessage}
+    assert Call(GetRegisteredMessages()).send() == {GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
+    assert Call(AddMessage(1, 2)).send() == 3
+    Call(StopHandling(AddMessage)).send()
 
     try:
-        Call(message=AddMessage(1, 2)).send(1)
+        Call(AddMessage(1, 2)).send(1)
     except RdisqResponseTimeout:
         pass
     else:
-        raise RuntimeError("Should have failed communicating with worker")
+        raise RuntimeError("Should have failed communicating with receiver")
 
     SumMessage.set_handler_instance_factory(lambda start: Summer(start))
-    assert Call(message=StartHandling(new_message_class=SumMessage, new_handler_kwargs={"start": 1})).send() == {
-        GetRegisteredMessages, StartHandling, StopHandling, SumMessage}
+    assert Call(StartHandling(SumMessage, {"start": 1})).send() == {GetRegisteredMessages, StartHandling, StopHandling,
+                                                                    SumMessage}
     assert Call(SumMessage(3)).send() == 4
 
     receiver_service.stop()
