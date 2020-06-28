@@ -12,17 +12,12 @@ if TYPE_CHECKING:
     from .service import RdisqService
 
 
-class RdisqAsyncConsumer(object):
-    def register_call_(self, name, call):
-        setattr(self, name, call)
-
-
 class AbstractRdisqConsumer(object):
     service_class: "RdisqService"
 
     def __init__(self, service_class):
         self.__queue_to_callable = None
-        self.service_class = service_class
+        self.service_class: RdisqService = service_class
         self.__setup_stub_methods_for_consumer()
 
     def __setup_stub_methods_for_consumer(self):
@@ -39,21 +34,9 @@ class AbstractRdisqConsumer(object):
         timeout = kwargs.pop("timeout", self.service_class.response_timeout)
         uid = kwargs.pop("rdisq_uid", None)
         method_queue_name = self.service_class.get_queue_name_for_method(method_name, uid)
-        redis_con = self.service_class.redis_dispatcher.get_redis()
-        task_id = method_queue_name + generate_task_id()
-        request_payload = RequestPayload(
-            task_id=task_id,
-            args=args,
-            kwargs=kwargs,
-            timeout=timeout
-        )
-        request_key = get_request_key(task_id)
-        serialized_request = self.service_class.serializer.dumps(request_payload)
-        # todo -- ask lital why he isn't passing the serialized_request inside the lpush?
-        # wouldn't that save a network call?
-        redis_con.setex(request_key, timeout, serialized_request)
-        redis_con.lpush(method_queue_name, task_id)
-        return RdisqResponse(task_id, self)
+
+        return self.service_class.redis_dispatcher.queue_task(
+            method_queue_name, *args, timeout=timeout, **kwargs)
 
     def get_stub_method(self, method_name):
         raise NotImplementedError()

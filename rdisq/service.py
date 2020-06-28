@@ -30,6 +30,7 @@ def remote_method(callable_object):
     callable_object.is_remote = True
     return callable_object
 
+QueueName = NewType("QueueName", str)
 
 class RdisqService(object):
     """
@@ -93,7 +94,7 @@ class RdisqService(object):
         return False
 
     @classmethod
-    def get_consumer(cls):
+    def get_consumer(cls)->RdisqWaitingConsumer:
         if cls.__sync_consumer is None:
             cls.__sync_consumer = RdisqWaitingConsumer(cls)
         return cls.__sync_consumer
@@ -109,7 +110,7 @@ class RdisqService(object):
         return cls.redis_dispatcher.get_redis()
 
     @classmethod
-    def get_queue_name_for_method(cls, method_name, prefix=None):
+    def get_queue_name_for_method(cls, method_name, prefix=None)->QueueName:
         if prefix is not None:
             return prefix + "_" + cls.get_service_name() + "_" + method_name
         return cls.get_service_name() + "_" + method_name
@@ -149,6 +150,10 @@ class RdisqService(object):
     def uid(self):
         """Returns the unique id of this service instance"""
         return self.__uid
+
+    @property
+    def broadcast_queues(self)->FrozenSet[str]:
+        return frozenset(self.__broadcast_queues)
 
     @property
     def callables(self) -> FrozenSet[Callable]:
@@ -247,7 +252,7 @@ class RdisqService(object):
         if data_string is None:
             return
         self._pre(method_queue_name)
-        request_payload = self.serializer.loads(data_string)
+        request_payload: RequestPayload = self.serializer.loads(data_string)
         timeout = request_payload.timeout
         if request_payload.task_id != task_id.decode():
             raise ValueError("Memorized task id is mismatching to received-payload task_id")

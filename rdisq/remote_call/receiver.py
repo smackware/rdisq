@@ -1,6 +1,7 @@
 from typing import *
 
 from rdisq.redis_dispatcher import PoolRedisDispatcher
+from rdisq.remote_call.consts import RECEIVER_SERVICE_NAME
 from rdisq.remote_call.message import RdisqMessage
 from rdisq.remote_call.message_dispatcher import MessageDispatcher
 from rdisq.service import RdisqService, remote_method
@@ -27,9 +28,21 @@ class GetRegisteredMessages(RdisqMessage):
     def __init__(self):
         super().__init__()
 
+class AddQueue(RdisqMessage):
+    def __init__(self, new_queue_name: str):
+        self.new_queue_name = new_queue_name
+        super().__init__()
+        
+class RemoveQueue(RdisqMessage):
+    def __init__(self, old_queue_name: str):
+        self.old_queue_name = old_queue_name
+        super(RemoveQueue, self).__init__()
+
+
+CORE_RECEIVER_MESSAGES = {StartHandling, StopHandling, GetRegisteredMessages, AddQueue, RemoveQueue}
 
 class ReceiverService(RdisqService):
-    service_name = "ReceiverService"
+    service_name = RECEIVER_SERVICE_NAME
     response_timeout = 10  # seconds
     redis_dispatcher = MessageDispatcher(host='127.0.0.1', port=6379, db=0)
     _message_to_handler_instance: Dict[Type[RdisqMessage], Union[object, None]]
@@ -40,9 +53,22 @@ class ReceiverService(RdisqService):
         if message_class:
             self.register_message(message_class, instance)
 
-        self.register_message(StartHandling, self)
-        self.register_message(StopHandling, self)
-        self.register_message(GetRegisteredMessages, self)
+        for m in CORE_RECEIVER_MESSAGES:
+            self.register_message(m, self)
+
+        self._on_process_loop()
+
+    @AddQueue.set_handler
+    def add_queue(self, new_queue_name: str):
+        self.register_method_to_queue(self.receive_message, new_queue_name)
+        self._on_process_loop()
+        return self.broadcast_queues
+
+    @RemoveQueue.set_handler
+    def remove_queue(self, old_queue_name: str):
+        self.unregister_from_queue(old_queue_name)
+        self._on_process_loop()
+        return self.broadcast_queues
 
     @GetRegisteredMessages.set_handler
     def get_registered_messages(self) -> Set[Type[RdisqMessage]]:
@@ -64,14 +90,18 @@ class ReceiverService(RdisqService):
         if isinstance(new_handler_instance, dict):
             new_handler_instance = new_message_class.spawn_handler_instance(**new_handler_instance)
 
-        self.register_method_to_queue(self.receive_message, new_message_class.get_message_class_id())
+        self.add_queue(new_message_class.get_message_class_id())
         self._message_to_handler_instance[new_message_class] = new_handler_instance
+
+        self._on_process_loop()
         return self.get_registered_messages()
 
     @StopHandling.set_handler
     def unregister_message(self, old_message_class: Type[RdisqMessage]):
         self.unregister_from_queue(old_message_class.get_message_class_id())
         self._message_to_handler_instance.pop(old_message_class)
+
+        self._on_process_loop()
         return self.get_registered_messages()
 
     @remote_method

@@ -3,11 +3,12 @@ from threading import Thread
 import pytest
 from redis import Redis
 
-from rdisq.remote_call.call import Call
+from rdisq.remote_call.request_handle import RequestHandle
 from rdisq.remote_call.message import RdisqMessage, MessageRequestData
 from rdisq.remote_call.message_dispatcher import MessageDispatcher
 from rdisq.remote_call.receiver import (
-    ReceiverService, StartHandling, StopHandling, GetRegisteredMessages)
+    ReceiverService, StartHandling, StopHandling, GetRegisteredMessages,
+    CORE_RECEIVER_MESSAGES, AddQueue, RemoveQueue)
 from rdisq.response import RdisqResponseTimeout
 
 
@@ -39,11 +40,11 @@ def test_message(flush_redis):
     receiver_service = ReceiverService(message_class=AddMessage)
     Thread(group=None, target=receiver_service.process).start()
 
-    call = Call(AddMessage(1, 2))
-    assert call.send() == add(1, 2)
+    call = RequestHandle(AddMessage(1, 2))
+    assert call.send_and_wait_reply() == add(1, 2)
 
-    call = Call(AddMessage(3, 2))
-    assert call.send() == add(3, 2)
+    call = RequestHandle(AddMessage(3, 2))
+    assert call.send_and_wait_reply() == add(3, 2)
 
     receiver_service.stop()
 
@@ -72,28 +73,28 @@ def test_class_message(flush_redis):
     receiver_service = ReceiverService(message_class=SumMessage, instance=summer)
     Thread(group=None, target=receiver_service.process).start()
 
-    call = Call(SumMessage(1))
-    assert call.send() == 1
+    request = RequestHandle(SumMessage(1))
+    assert request.send_and_wait_reply() == 1
 
     try:
-        call.send()
+        request.send_and_wait_reply()
     except:
         pass
     else:
         raise RuntimeError("Should not have allowed message reuse")
 
-    call = Call(SumMessage(2))
+    request = RequestHandle(SumMessage(2))
     try:
-        assert call.response
+        assert request.response
     except:
         pass
     else:
         raise RuntimeError("Should not have allowed getting result before the evnet has run")
 
-    assert call.send() == 3
+    assert request.send_and_wait_reply() == 3
 
     assert summer.sum == 3
-    assert call.response.returned_value == 3
+    assert request.response.returned_value == 3
     receiver_service.stop()
 
 
@@ -103,28 +104,28 @@ def test_dynamic_service(flush_redis):
     Thread(group=None, target=receiver_service.process).start()
 
     receiver_service.register_message(AddMessage)
-    assert Call(AddMessage(1, 2)).send() == 3
+    assert RequestHandle(AddMessage(1, 2)).send_and_wait_reply() == 3
 
     receiver_service.unregister_message(AddMessage)
 
     try:
-        Call(AddMessage(1, 2)).send(1)
+        RequestHandle(AddMessage(1, 2)).send_and_wait_reply(1)
     except RdisqResponseTimeout:
         pass
     else:
         raise RuntimeError("Should have failed communicating with receiver")
 
     try:
-        Call(SumMessage(1)).send(1)
+        RequestHandle(SumMessage(1)).send_and_wait_reply(1)
     except RdisqResponseTimeout:
         pass
     else:
         raise RuntimeError("Should have failed communicating with receiver")
 
     receiver_service.register_message(SumMessage, summer)
-    Call(SumMessage(1)).send()
-    Call(SumMessage(2)).send()
-    assert summer.sum == 4
+    RequestHandle(SumMessage(1)).send_and_wait_reply()
+    RequestHandle(SumMessage(2)).send_and_wait_reply()
+    assert summer.sum == 3
 
     receiver_service.stop()
 
@@ -133,9 +134,9 @@ def test_service_control_messages(flush_redis):
     receiver_service = ReceiverService()
     Thread(group=None, target=receiver_service.process).start()
 
-    assert Call(StartHandling(AddMessage)).send() == {GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
+    assert RequestHandle(StartHandling(AddMessage)).send_and_wait_reply() == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
     try:
-        Call(StartHandling(AddMessage)).send()
+        RequestHandle(StartHandling(AddMessage)).send_and_wait_reply()
     except Exception:
         pass
     else:
@@ -143,26 +144,46 @@ def test_service_control_messages(flush_redis):
 
     dispatcher = MessageDispatcher(host='127.0.0.1', port=6379, db=0)
     receivers_from_redis = dispatcher.get_receiver_services()
-    assert receivers_from_redis[receiver_service.uid].registered_messages == {GetRegisteredMessages, StartHandling, StopHandling,
-                                                            AddMessage}
+    assert receivers_from_redis[receiver_service.uid].registered_messages == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
     assert receivers_from_redis[receiver_service.uid].uid == receiver_service.uid
 
-    assert receiver_service.get_registered_messages() == {GetRegisteredMessages, StartHandling, StopHandling,
-                                                          AddMessage}
-    assert Call(GetRegisteredMessages()).send() == {GetRegisteredMessages, StartHandling, StopHandling, AddMessage}
-    assert Call(AddMessage(1, 2)).send() == 3
-    Call(StopHandling(AddMessage)).send()
+    assert receiver_service.get_registered_messages() == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
+    assert RequestHandle(GetRegisteredMessages()).send_and_wait_reply() == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
+    assert RequestHandle(AddMessage(1, 2)).send_and_wait_reply() == 3
+    RequestHandle(StopHandling(AddMessage)).send_and_wait_reply()
 
     try:
-        Call(AddMessage(1, 2)).send(1)
+        RequestHandle(AddMessage(1, 2)).send_and_wait_reply(1)
     except RdisqResponseTimeout:
         pass
     else:
         raise RuntimeError("Should have failed communicating with receiver")
 
     SumMessage.set_handler_instance_factory(lambda start: Summer(start))
-    assert Call(StartHandling(SumMessage, {"start": 1})).send() == {GetRegisteredMessages, StartHandling, StopHandling,
-                                                                    SumMessage}
-    assert Call(SumMessage(3)).send() == 4
+    assert RequestHandle(StartHandling(SumMessage, {"start": 1})).send_and_wait_reply() == {SumMessage}.union(CORE_RECEIVER_MESSAGES)
+    assert RequestHandle(SumMessage(3)).send_and_wait_reply() == 4
 
     receiver_service.stop()
+
+
+def test_queues(flush_redis):
+    receiver_service = ReceiverService()
+
+
+    RequestHandle(AddQueue(new_queue_name="test_queue")).send_async()
+    receiver_service.rdisq_process_one()
+    assert 'ReceiverService_test_queue' in receiver_service.broadcast_queues
+
+    RequestHandle(StartHandling(AddMessage)).send_async()
+    receiver_service.rdisq_process_one()
+
+    dispatcher = MessageDispatcher(host='127.0.0.1', port=6379, db=0)
+    r = dispatcher.queue_task("ReceiverService_test_queue", AddMessage(1, 2))
+    receiver_service.rdisq_process_one()
+    assert r.wait() == 3
+
+    RequestHandle(RemoveQueue(old_queue_name="test_queue")).send_async()
+    receiver_service.rdisq_process_one()
+    assert 'ReceiverService_test_queue' not in receiver_service.broadcast_queues
+
+
