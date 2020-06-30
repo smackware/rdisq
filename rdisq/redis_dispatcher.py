@@ -14,6 +14,7 @@ from rdisq.serialization import PickleSerializer
 
 class AbstractRedisDispatcher(object):
     default_call_timeout = 10
+    DEFAULT_REQUEST_TIMEOUT = 500
     serializer: ClassVar[PickleSerializer] = PickleSerializer()
 
     def __init__(self, *args, **kwargs):
@@ -27,7 +28,7 @@ class AbstractRedisDispatcher(object):
 
     def queue_task(self, queue_name: str, *task_args, timeout=None, **task_kwargs):
         if not timeout:
-            timeout = self.default_call_timeout
+            timeout = self.DEFAULT_REQUEST_TIMEOUT
         task_id = queue_name + generate_task_id()
         request_payload = RequestPayload(
             task_id=task_id,

@@ -1,9 +1,8 @@
 from typing import *
 
-from rdisq.redis_dispatcher import PoolRedisDispatcher
-from rdisq.remote_call.consts import RECEIVER_SERVICE_NAME
-from rdisq.remote_call.message import RdisqMessage
-from rdisq.remote_call.message_dispatcher import MessageDispatcher
+from rdisq.consts import RECEIVER_SERVICE_NAME
+from rdisq.request.message import RdisqMessage
+from rdisq.request.dispatcher import RequestDispatcher
 from rdisq.service import RdisqService, remote_method
 
 
@@ -44,7 +43,7 @@ CORE_RECEIVER_MESSAGES = {StartHandling, StopHandling, GetRegisteredMessages, Ad
 class ReceiverService(RdisqService):
     service_name = RECEIVER_SERVICE_NAME
     response_timeout = 10  # seconds
-    redis_dispatcher = MessageDispatcher(host='127.0.0.1', port=6379, db=0)
+    redis_dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
     _message_to_handler_instance: Dict[Type[RdisqMessage], Union[object, None]]
 
     def __init__(self, uid=None, message_class: Type[RdisqMessage] = None, instance: object = None):
@@ -62,13 +61,13 @@ class ReceiverService(RdisqService):
     def add_queue(self, new_queue_name: str):
         self.register_method_to_queue(self.receive_message, new_queue_name)
         self._on_process_loop()
-        return self.broadcast_queues
+        return self.listening_queues
 
     @RemoveQueue.set_handler
     def remove_queue(self, old_queue_name: str):
         self.unregister_from_queue(old_queue_name)
         self._on_process_loop()
-        return self.broadcast_queues
+        return self.listening_queues
 
     @GetRegisteredMessages.set_handler
     def get_registered_messages(self) -> Set[Type[RdisqMessage]]:

@@ -4,6 +4,8 @@ from typing import *
 import time
 import uuid
 
+from .consts import QueueName
+
 if TYPE_CHECKING:
     from redis import Redis
     from .redis_dispatcher import AbstractRedisDispatcher
@@ -30,7 +32,6 @@ def remote_method(callable_object):
     callable_object.is_remote = True
     return callable_object
 
-QueueName = NewType("QueueName", str)
 
 class RdisqService(object):
     """
@@ -56,18 +57,18 @@ class RdisqService(object):
     __sync_consumer = None
     __async_consumer = None
 
-    __queue_to_callable: Dict[str, Callable]
-    __broadcast_queues: Set[str]
-    __direct_queues: Set[str]
+    __queue_to_callable: Dict[QueueName, Callable]
+    __broadcast_queues: Set[QueueName]
+    __direct_queues: Set[QueueName]
 
     def __init__(self, uid=None):
         if self.redis_dispatcher is None:
             raise NotImplementedError(MISSING_DISPATCHER_ERROR_TEXT)
         if self.__class__.__module__ == '__main__' and self.service_name is None:
             raise NotImplementedError(MISSING_SERVICE_NAME_IN_MAIN_ERROR_TEXT)
+        self.__is_suspended = False
         self.__uid = uid or str(uuid.uuid4())
         self.__map_exposed_methods_to_queues()
-        self.__is_suspended = False
 
     @classmethod
     def get_service_name(cls):
@@ -94,7 +95,7 @@ class RdisqService(object):
         return False
 
     @classmethod
-    def get_consumer(cls)->RdisqWaitingConsumer:
+    def get_consumer(cls) -> RdisqWaitingConsumer:
         if cls.__sync_consumer is None:
             cls.__sync_consumer = RdisqWaitingConsumer(cls)
         return cls.__sync_consumer
@@ -110,7 +111,7 @@ class RdisqService(object):
         return cls.redis_dispatcher.get_redis()
 
     @classmethod
-    def get_queue_name_for_method(cls, method_name, prefix=None)->QueueName:
+    def get_queue_name_for_method(cls, method_name, prefix=None) -> QueueName:
         if prefix is not None:
             return prefix + "_" + cls.get_service_name() + "_" + method_name
         return cls.get_service_name() + "_" + method_name
@@ -152,8 +153,11 @@ class RdisqService(object):
         return self.__uid
 
     @property
-    def broadcast_queues(self)->FrozenSet[str]:
-        return frozenset(self.__broadcast_queues)
+    def listening_queues(self) -> FrozenSet[QueueName]:
+        queues = self.__direct_queues
+        if not self.__is_suspended:
+            queues = queues.union(self.__broadcast_queues)
+        return frozenset(queues)
 
     @property
     def callables(self) -> FrozenSet[Callable]:
@@ -162,8 +166,8 @@ class RdisqService(object):
         """
         return frozenset(self.__queue_to_callable.values())
 
-    def rdisq_process_one(self):
-        self.__process_one()
+    def rdisq_process_one(self, timeout=0):
+        return self.__process_one(timeout=timeout)
 
     def suspend(self):
         self.__is_suspended = True
@@ -238,13 +242,11 @@ class RdisqService(object):
         Will pend for an event (unless timeout is specified) then it will process it
         """
         redis_con = self.get_redis()
-        queues = list(self.__direct_queues)
-        if not self.__is_suspended:
-            queues += list(self.__broadcast_queues)
+        queues = list(self.listening_queues)
         redis_result = redis_con.brpop(queues, timeout=timeout)
 
         if redis_result is None:  # Timeout
-            return
+            return False
         method_queue_name, task_id = redis_result
         request_key = get_request_key(task_id.decode())
         call = self.__queue_to_callable[method_queue_name.decode()]

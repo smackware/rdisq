@@ -2,11 +2,13 @@ from collections import defaultdict
 from typing import *
 import time
 
+import uuid
+
 from rdisq.redis_dispatcher import PoolRedisDispatcher
-from rdisq.service import QueueName
+from rdisq.consts import QueueName
 
 if TYPE_CHECKING:
-    from rdisq.remote_call.receiver import ReceiverService
+    from rdisq.request.receiver import ReceiverService
 
 
 class ReceiverServiceStatus:
@@ -16,10 +18,10 @@ class ReceiverServiceStatus:
         self.registered_messages = worker.get_registered_messages()
         self.time = time.time()
         self.uid = worker.uid
-        self.broadcast_queues: FrozenSet[QueueName] = worker.broadcast_queues
+        self.broadcast_queues: FrozenSet[QueueName] = worker.listening_queues
 
 
-class MessageDispatcher(PoolRedisDispatcher):
+class RequestDispatcher(PoolRedisDispatcher):
     ACTIVE_SERVICES_REDIS_HASH = "receiver_services"
 
     def update_receiver_service_status(self, receiver: "ReceiverService"):
@@ -42,7 +44,7 @@ class MessageDispatcher(PoolRedisDispatcher):
 
     def find_queues_for_services(self, service_uids: Set[str]) -> FrozenSet[QueueName]:
         """
-        Find all queues whose set of registered services is the parameter.
+        Find all queues that are listened to by all these services.
 
         :param service_uids: Set IDs of queues to match.
         :return: Set of queue names.
@@ -58,12 +60,7 @@ class MessageDispatcher(PoolRedisDispatcher):
 
         return frozenset(queue_to_services.keys())
 
-    def get_queue_for_services(self, service_uids: Set[str]) -> QueueName:
-        preexisting = self.find_queues_for_services(service_uids)
-        if preexisting:
-            queue = list(preexisting)[0]
-        else:
-
-            raise NotImplementedError("Add functionality for creating queue")
-
-        return queue
+    @staticmethod
+    def generate_queue_name():
+        """"""
+        return f"rdisq_queue__{uuid.uuid4()}"

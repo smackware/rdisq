@@ -3,10 +3,10 @@ from threading import Thread
 import pytest
 from redis import Redis
 
-from rdisq.remote_call.request_handle import RequestHandle
-from rdisq.remote_call.message import RdisqMessage, MessageRequestData
-from rdisq.remote_call.message_dispatcher import MessageDispatcher
-from rdisq.remote_call.receiver import (
+from rdisq.request.request_handle import RequestHandle, MultiRequestHandle
+from rdisq.request.message import RdisqMessage, MessageRequestData
+from rdisq.request.dispatcher import RequestDispatcher
+from rdisq.request.receiver import (
     ReceiverService, StartHandling, StopHandling, GetRegisteredMessages,
     CORE_RECEIVER_MESSAGES, AddQueue, RemoveQueue)
 from rdisq.response import RdisqResponseTimeout
@@ -142,7 +142,7 @@ def test_service_control_messages(flush_redis):
     else:
         raise RuntimeError("Should have failed to re-add a message to a receiver.")
 
-    dispatcher = MessageDispatcher(host='127.0.0.1', port=6379, db=0)
+    dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
     receivers_from_redis = dispatcher.get_receiver_services()
     assert receivers_from_redis[receiver_service.uid].registered_messages == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
     assert receivers_from_redis[receiver_service.uid].uid == receiver_service.uid
@@ -160,7 +160,8 @@ def test_service_control_messages(flush_redis):
         raise RuntimeError("Should have failed communicating with receiver")
 
     SumMessage.set_handler_instance_factory(lambda start: Summer(start))
-    assert RequestHandle(StartHandling(SumMessage, {"start": 1})).send_and_wait_reply() == {SumMessage}.union(CORE_RECEIVER_MESSAGES)
+    assert RequestHandle(StartHandling(SumMessage, {"start": 1})).send_and_wait_reply() == {SumMessage}.union(
+        CORE_RECEIVER_MESSAGES)
     assert RequestHandle(SumMessage(3)).send_and_wait_reply() == 4
 
     receiver_service.stop()
@@ -169,21 +170,53 @@ def test_service_control_messages(flush_redis):
 def test_queues(flush_redis):
     receiver_service = ReceiverService()
 
-
     RequestHandle(AddQueue(new_queue_name="test_queue")).send_async()
     receiver_service.rdisq_process_one()
-    assert 'ReceiverService_test_queue' in receiver_service.broadcast_queues
+    assert 'ReceiverService_test_queue' in receiver_service.listening_queues
 
     RequestHandle(StartHandling(AddMessage)).send_async()
     receiver_service.rdisq_process_one()
 
-    dispatcher = MessageDispatcher(host='127.0.0.1', port=6379, db=0)
+    dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
     r = dispatcher.queue_task("ReceiverService_test_queue", AddMessage(1, 2))
     receiver_service.rdisq_process_one()
     assert r.wait() == 3
 
     RequestHandle(RemoveQueue(old_queue_name="test_queue")).send_async()
     receiver_service.rdisq_process_one()
-    assert 'ReceiverService_test_queue' not in receiver_service.broadcast_queues
+    assert 'ReceiverService_test_queue' not in receiver_service.listening_queues
 
 
+def test_multi(flush_redis):
+    receiver_service_1 = ReceiverService()
+    receiver_service_2 = ReceiverService()
+
+
+    request = MultiRequestHandle(StartHandling(AddMessage)).send_async()
+    receiver_service_1.rdisq_process_one()
+    receiver_service_2.rdisq_process_one()
+    r = request.wait()
+    assert r == [{AddMessage}.union(CORE_RECEIVER_MESSAGES), {AddMessage}.union(CORE_RECEIVER_MESSAGES)]
+
+    request = MultiRequestHandle(AddMessage(1, 3)).send_async()
+    receiver_service_1.rdisq_process_one()
+    receiver_service_2.rdisq_process_one()
+    r = request.wait()
+    assert r == [4, 4]
+
+    request = MultiRequestHandle(
+        AddMessage(4, 4),
+        lambda s: s.uid == receiver_service_1.uid).send_async()
+    receiver_service_1.rdisq_process_one()
+    r = request.wait()
+    assert r == [8]
+
+    receiver_service_3 = ReceiverService()
+    request = MultiRequestHandle(
+        AddMessage(4, 4),
+        lambda s: s.uid in [receiver_service_1.uid, receiver_service_2.uid]).send_async()
+
+    assert receiver_service_3.rdisq_process_one(1) is False
+    receiver_service_1.rdisq_process_one()
+    receiver_service_2.rdisq_process_one()
+    assert request.wait() == [8,8]

@@ -80,6 +80,9 @@ class RdisqResponse(object):
         if redis_response is None:
             raise RdisqResponseTimeout(self._task_id)
         queue_name, response = redis_response
+        return self.process_response(response)
+
+    def process_response(self, response):
         self.total_time_seconds = time.time() - self.called_at_unixtime
         response_payload = self.dispatcher.serializer.loads(response)
         self.redis_con.delete(self._task_id)

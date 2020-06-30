@@ -1,1 +1,0 @@
-RECEIVER_SERVICE_NAME = "ReceiverService"
