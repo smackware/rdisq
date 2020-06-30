@@ -156,7 +156,7 @@ class RdisqService(object):
     def listening_queues(self) -> FrozenSet[QueueName]:
         queues = self.__direct_queues
         if not self.__is_suspended:
-            queues = queues.union(self.__broadcast_queues)
+            queues = queues | self.__broadcast_queues
         return frozenset(queues)
 
     @property

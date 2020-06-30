@@ -134,7 +134,7 @@ def test_service_control_messages(flush_redis):
     receiver_service = ReceiverService()
     Thread(group=None, target=receiver_service.process).start()
 
-    assert RequestHandle(StartHandling(AddMessage)).send_and_wait_reply() == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
+    assert RequestHandle(StartHandling(AddMessage)).send_and_wait_reply() == {AddMessage} | CORE_RECEIVER_MESSAGES
     try:
         RequestHandle(StartHandling(AddMessage)).send_and_wait_reply()
     except Exception:
@@ -144,11 +144,11 @@ def test_service_control_messages(flush_redis):
 
     dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
     receivers_from_redis = dispatcher.get_receiver_services()
-    assert receivers_from_redis[receiver_service.uid].registered_messages == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
+    assert receivers_from_redis[receiver_service.uid].registered_messages == {AddMessage} | CORE_RECEIVER_MESSAGES
     assert receivers_from_redis[receiver_service.uid].uid == receiver_service.uid
 
-    assert receiver_service.get_registered_messages() == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
-    assert RequestHandle(GetRegisteredMessages()).send_and_wait_reply() == {AddMessage}.union(CORE_RECEIVER_MESSAGES)
+    assert receiver_service.get_registered_messages() == {AddMessage} | CORE_RECEIVER_MESSAGES
+    assert RequestHandle(GetRegisteredMessages()).send_and_wait_reply() == {AddMessage} | CORE_RECEIVER_MESSAGES
     assert RequestHandle(AddMessage(1, 2)).send_and_wait_reply() == 3
     RequestHandle(StopHandling(AddMessage)).send_and_wait_reply()
 
@@ -160,8 +160,8 @@ def test_service_control_messages(flush_redis):
         raise RuntimeError("Should have failed communicating with receiver")
 
     SumMessage.set_handler_instance_factory(lambda start: Summer(start))
-    assert RequestHandle(StartHandling(SumMessage, {"start": 1})).send_and_wait_reply() == {SumMessage}.union(
-        CORE_RECEIVER_MESSAGES)
+    assert RequestHandle(StartHandling(SumMessage, {"start": 1})).send_and_wait_reply() == {
+        SumMessage} | CORE_RECEIVER_MESSAGES
     assert RequestHandle(SumMessage(3)).send_and_wait_reply() == 4
 
     receiver_service.stop()
@@ -191,12 +191,11 @@ def test_multi(flush_redis):
     receiver_service_1 = ReceiverService()
     receiver_service_2 = ReceiverService()
 
-
     request = MultiRequestHandle(StartHandling(AddMessage)).send_async()
     receiver_service_1.rdisq_process_one()
     receiver_service_2.rdisq_process_one()
     r = request.wait()
-    assert r == [{AddMessage}.union(CORE_RECEIVER_MESSAGES), {AddMessage}.union(CORE_RECEIVER_MESSAGES)]
+    assert r == [{AddMessage} | CORE_RECEIVER_MESSAGES, {AddMessage} | CORE_RECEIVER_MESSAGES]
 
     request = MultiRequestHandle(AddMessage(1, 3)).send_async()
     receiver_service_1.rdisq_process_one()
@@ -219,4 +218,4 @@ def test_multi(flush_redis):
     assert receiver_service_3.rdisq_process_one(1) is False
     receiver_service_1.rdisq_process_one()
     receiver_service_2.rdisq_process_one()
-    assert request.wait() == [8,8]
+    assert request.wait() == [8, 8]
