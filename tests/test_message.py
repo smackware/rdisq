@@ -32,19 +32,21 @@ def flush_redis():
 
 
 @AddMessage.set_handler
-def add(first, second):
-    return first + second
+def add(message: AddMessage):
+    return message.first + message.second
 
 
 def test_message(flush_redis):
     receiver_service = ReceiverService(message_class=AddMessage)
-    Thread(group=None, target=receiver_service.process).start()
 
-    call = RequestHandle(AddMessage(1, 2))
-    assert call.send_and_wait_reply() == add(1, 2)
+    call = RequestHandle(AddMessage(1, 2)).send_async()
+    receiver_service.rdisq_process_one()
+    assert call.wait() == 1 + 2
 
-    call = RequestHandle(AddMessage(3, 2))
-    assert call.send_and_wait_reply() == add(3, 2)
+    message = AddMessage(3, 2)
+    call = RequestHandle(message).send_async()
+    receiver_service.rdisq_process_one()
+    assert call.wait() == add(message)
 
     receiver_service.stop()
 
@@ -63,8 +65,8 @@ class Summer:
         self.sum = start
 
     @SumMessage.set_handler
-    def add(self, new):
-        self.sum += new
+    def add(self, message: SumMessage):
+        self.sum += message.new
         return self.sum
 
 
@@ -74,7 +76,8 @@ def test_class_message(flush_redis):
     Thread(group=None, target=receiver_service.process).start()
 
     request = RequestHandle(SumMessage(1))
-    assert request.send_and_wait_reply() == 1
+    request.send_async()
+    assert request.wait() == 1
 
     try:
         request.send_and_wait_reply()
@@ -103,10 +106,10 @@ def test_dynamic_service(flush_redis):
     receiver_service = ReceiverService()
     Thread(group=None, target=receiver_service.process).start()
 
-    receiver_service.register_message(AddMessage)
+    receiver_service.register_message(StartHandling(AddMessage))
     assert RequestHandle(AddMessage(1, 2)).send_and_wait_reply() == 3
 
-    receiver_service.unregister_message(AddMessage)
+    receiver_service.unregister_message(StopHandling(AddMessage))
 
     try:
         RequestHandle(AddMessage(1, 2)).send_and_wait_reply(1)
@@ -122,7 +125,7 @@ def test_dynamic_service(flush_redis):
     else:
         raise RuntimeError("Should have failed communicating with receiver")
 
-    receiver_service.register_message(SumMessage, summer)
+    receiver_service.register_message(StartHandling(SumMessage, summer))
     RequestHandle(SumMessage(1)).send_and_wait_reply()
     RequestHandle(SumMessage(2)).send_and_wait_reply()
     assert summer.sum == 3

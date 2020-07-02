@@ -9,7 +9,6 @@ class MessageRequestData:
 
 class RdisqMessage:
     _handler_name: ClassVar[str] = None
-    _handler: ClassVar[Callable] = None
     _handler_instance_factory: ClassVar[Callable] = None
 
     def __init__(self, **kwargs):
@@ -40,11 +39,11 @@ class RdisqMessage:
         return "%s.%s_handler" % (cls.__module__, cls.__name__)
 
     @classmethod
-    def call_handler(cls, instance: object = None, *args, **kwargs):
+    def call_handler(cls, message: "RdisqMessage", instance: object = None):
         if not instance:
-            return cls._handler(*args, **kwargs)
+            return cls._handler(message)
         else:
-            return getattr(instance, cls._handler_name)(*args, **kwargs)
+            return getattr(instance, cls._handler_name)(message)
 
     @staticmethod
     def _handler(*args, **kwargs):
