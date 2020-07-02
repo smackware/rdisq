@@ -83,11 +83,25 @@ class ReceiverService(RdisqService):
                 f"Tried registering {message.new_message_class} to {self}, but it's already registered."
             )
 
+        new_handler_instance = None
         if isinstance(message.new_handler_instance, dict):
             new_handler_instance = message.new_message_class.spawn_handler_instance(
                 **message.new_handler_instance)
-        else:
+        elif message.new_message_class.get_handler_class() and isinstance(message.new_handler_instance,
+                                                                          message.new_message_class.get_handler_class()):
             new_handler_instance = message.new_handler_instance
+        elif message.new_handler_instance is None:
+            if message.new_message_class.get_handler_class() is None:
+                new_handler_instance = None
+            else:
+                for k, v in self._message_to_handler_instance.items():
+                    if type(v) == message.new_message_class.get_handler_class():
+                        new_handler_instance = v
+                        break
+                if not new_handler_instance:
+                    raise RuntimeError(f"Did not provide handler instance")
+        else:
+            raise RuntimeError(f"invalid handler instance {message.new_handler_instance}")
 
         self.add_queue(AddQueue(message.new_message_class.get_message_class_id()))
         self._message_to_handler_instance[message.new_message_class] = new_handler_instance

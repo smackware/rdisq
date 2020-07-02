@@ -8,7 +8,6 @@ print("starting import")
 from .worker import GrumpyException
 from .worker import SimpleWorker
 
-# Call the add method
 print(SimpleWorker.get_consumer().add(1, 2))
 
 # call the build method

@@ -87,7 +87,7 @@ class BaseRequestHandle:
         self._service_filter = filter_by_message
 
 
-class RequestHandle(BaseRequestHandle):
+class Request(BaseRequestHandle):
     _response: "RdisqResponse"
 
     @property
@@ -104,8 +104,8 @@ class RequestHandle(BaseRequestHandle):
     def wait(self, timeout=None):
         return self._response.wait(timeout)
 
-    def send_async(self) -> "RequestHandle":
-        super(RequestHandle, self).send_async()
+    def send_async(self) -> "Request":
+        super(Request, self).send_async()
         self._response = self.dispatcher.queue_task(
             # f"{RECEIVER_SERVICE_NAME}_{self.message.get_message_class_id()}",
             self._get_channel(),
@@ -119,17 +119,17 @@ class RequestHandle(BaseRequestHandle):
         return channel
 
 
-class MultiRequestHandle(BaseRequestHandle):
+class MultiRequest(BaseRequestHandle):
     _targets: Set[ServiceUid]
-    _requests: List[RequestHandle]
+    _requests: List[Request]
 
-    def send_async(self) -> "MultiRequestHandle":
-        super(MultiRequestHandle, self).send_async()
+    def send_async(self) -> "MultiRequest":
+        super(MultiRequest, self).send_async()
         target_uids = self._get_target_uids()
         self._requests = []
         for target_uid in target_uids:
             self._requests.append(
-                RequestHandle(self.message, lambda s: s.uid == target_uid).
+                Request(self.message, lambda s: s.uid == target_uid).
                     send_async())
         return self
 
