@@ -5,7 +5,6 @@ from typing import *
 from rdisq.request.message import RdisqMessage
 from rdisq.request.dispatcher import ReceiverServiceStatus, RequestDispatcher
 from rdisq.consts import QueueName, ServiceUid
-from rdisq.request.receiver import AddQueue
 
 if TYPE_CHECKING:
     from rdisq.response import RdisqResponse
@@ -17,7 +16,7 @@ class BaseRequestPlurality:
 
 class BaseRequestHandle:
     dispatcher: ClassVar[RequestDispatcher] = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
-    _target_service_uids: Set[ServiceUid]
+    _target_service_uids: Optional[Set[ServiceUid]]
 
     def __init__(self, message: RdisqMessage,
                  service_filter: Callable[["ReceiverServiceStatus"], bool] = None,
@@ -134,7 +133,6 @@ class MultiRequest(BaseRequestHandle):
         return self
 
     def wait(self, timeout=None):
-        start = time.time()
         queues: List[QueueName] = [r.task_id for r in self._requests]
         reply_count = 0
         while reply_count < len(queues):

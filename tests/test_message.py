@@ -3,7 +3,7 @@ from threading import Thread
 import pytest
 from redis import Redis
 
-from rdisq.request.request_handle import Request, MultiRequest
+from rdisq.request.request import Request, MultiRequest
 from rdisq.request.message import RdisqMessage, MessageRequestData
 from rdisq.request.dispatcher import RequestDispatcher
 from rdisq.request.receiver import (
@@ -42,12 +42,12 @@ def test_message(flush_redis):
 
     call = Request(SumMessage(1, 2)).send_async()
     receiver_service.rdisq_process_one()
-    assert call.wait() == 1 + 2
+    assert call.wait(1) == 1 + 2
 
     message = SumMessage(3, 2)
     call = Request(message).send_async()
     receiver_service.rdisq_process_one()
-    assert call.wait() == sum_(message)
+    assert call.wait(1) == sum_(message)
 
     receiver_service.stop()
 
@@ -89,7 +89,7 @@ def test_class_message(flush_redis):
 
     request = Request(AddMessage(1))
     request.send_async()
-    assert request.wait() == 1
+    assert request.wait(1) == 1
 
     try:
         request.send_and_wait_reply()
@@ -194,7 +194,7 @@ def test_queues(flush_redis):
     dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
     r = dispatcher.queue_task("ReceiverService_test_queue", SumMessage(1, 2))
     receiver_service.rdisq_process_one()
-    assert r.wait() == 3
+    assert r.wait(1) == 3
 
     Request(RemoveQueue(old_queue_name="test_queue")).send_async()
     receiver_service.rdisq_process_one()
@@ -208,20 +208,20 @@ def test_multi(flush_redis):
     request = MultiRequest(StartHandling(SumMessage)).send_async()
     receiver_service_1.rdisq_process_one()
     receiver_service_2.rdisq_process_one()
-    r = request.wait()
+    r = request.wait(1)
     assert r == [{SumMessage} | CORE_RECEIVER_MESSAGES, {SumMessage} | CORE_RECEIVER_MESSAGES]
 
     request = MultiRequest(SumMessage(1, 3)).send_async()
     receiver_service_1.rdisq_process_one()
     receiver_service_2.rdisq_process_one()
-    r = request.wait()
+    r = request.wait(1)
     assert r == [4, 4]
 
     request = MultiRequest(
         SumMessage(4, 4),
         lambda s: s.uid == receiver_service_1.uid).send_async()
     receiver_service_1.rdisq_process_one()
-    r = request.wait()
+    r = request.wait(1)
     assert r == [8]
 
     receiver_service_3 = ReceiverService()
@@ -232,7 +232,7 @@ def test_multi(flush_redis):
     assert receiver_service_3.rdisq_process_one(1) is False
     receiver_service_1.rdisq_process_one()
     receiver_service_2.rdisq_process_one()
-    assert request.wait() == [8, 8]
+    assert request.wait(1) == [8, 8]
 
 
 class _C:
@@ -243,10 +243,10 @@ class _C:
 
 def test_get_handler_class(flush_redis):
     receiver_service_1 = ReceiverService()
-    assert AddMessage.get_handler_class() == Summer
-    assert StartHandling.get_handler_class() == type(receiver_service_1)
-    assert MessageFromExternalModule.get_handler_class() == _C
-    assert SumMessage.get_handler_class() is None
+    assert AddMessage.handler_factory._handler_class == Summer
+    assert StartHandling.handler_factory._handler_class == type(receiver_service_1)
+    assert MessageFromExternalModule.handler_factory._handler_class == _C
+    assert SumMessage.handler_factory._handler_class is None
 
 
 def test_handler_class_reuse(flush_redis):
@@ -258,8 +258,8 @@ def test_handler_class_reuse(flush_redis):
 
     r = Request(AddMessage(4)).send_async()
     receiver_service_1.rdisq_process_one()
-    assert r.wait() == 4
+    assert r.wait(1) == 4
 
     r = Request(SubtractMessage(3)).send_async()
     receiver_service_1.rdisq_process_one()
-    assert r.wait() == 1
+    assert r.wait(1) == 1
