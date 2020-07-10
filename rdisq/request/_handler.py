@@ -11,14 +11,24 @@ class _Handler:
                  instance: Union[Dict, object] = None,
                  siblings: Iterable["_Handler"] = frozenset()
                  ):
+        """
+        :param handler_function: A function that will handle messages
+        :param handler_class: If the handler function is a bound-method, this should be the class that contains it.
+        :param instance: For bound-methods, this is either an instance that holds it, or kwargs for creating one.
+        :param siblings: Other handlers that live in the same receiver. Will try to reuse their handler-instances if
+            the handler_function is a bound method and instance is not provided.
+        """
         self._handler_function = handler_function
         self._handler_class = handler_class
         self._handler_name = self._handler_function.__name__
+        error = None
 
         new_handler_instance = None
         if isinstance(instance, dict):
             if self._handler_class:
                 new_handler_instance = self._handler_class(**instance)
+            else:
+                error = "Provided kwargs for constructor, but no class to _handler_construct"
         elif self._handler_class and isinstance(instance, self._handler_class):
             new_handler_instance = instance
         elif instance is None:
@@ -30,10 +40,14 @@ class _Handler:
                         new_handler_instance = sibling._handler_instance
                         break
                 if not new_handler_instance:
-                    raise RuntimeError(f"Did not provide handler instance")
+                    error = f"Did not provide handler instance and no suitable instance was found among siblings"
         else:
-            raise RuntimeError(f"invalid handler instance {instance}")
-        self._handler_instance = new_handler_instance
+            error = f"invalid handler instance {instance}"
+
+        if error:
+            raise RuntimeError(error)
+        else:
+            self._handler_instance = new_handler_instance
 
     def handle(self, message: "RdisqMessage") -> Any:
         if not self._handler_instance:
@@ -66,7 +80,7 @@ class _HandlerFactory(Generic[T]):
     @property
     def _handler_class(self) -> Optional[Type]:
         """
-        :return: If this message's handler is an instance-method, then return there class where it's supposed to be.
+        :return: If this message's handler is an bound-method, then return the class that contains it.
         """
         path = self._handler_function.__qualname__.split('.')
         # noinspection PyUnresolvedReferences
@@ -79,6 +93,6 @@ class _HandlerFactory(Generic[T]):
             if not isinstance(handler_class, type):
                 raise RuntimeError(
                     f"Could not determine if {self._handler_function} is"
-                    f" a method or a standalone function.")
+                    f" a bound-method or a standalone function.")
 
         return handler_class

@@ -5,6 +5,8 @@ import time
 
 from redis import Redis
 
+from rdisq.consts import QueueName
+
 if TYPE_CHECKING:
     from rdisq.redis_dispatcher import AbstractRedisDispatcher
 
@@ -27,14 +29,14 @@ class RdisqResponse(object):
     total_time_seconds = None
     called_at_unixtime = None
     timeout = None
-    exception = None
     default_timeout = 10
 
     @property
     def returned_value(self):
         return self.response_payload.returned_value
 
-    def __init__(self, task_id, rdisq_consumer:"AbstractRdisqConsumer"=None, dispatcher: "AbstractRedisDispatcher" = None):
+    def __init__(self, task_id: QueueName, rdisq_consumer: "AbstractRdisqConsumer" = None,
+                 dispatcher: "AbstractRedisDispatcher" = None):
         if not rdisq_consumer and not dispatcher:
             raise RuntimeError("RdisqResponse initialized without consumer and without dispatcher.")
 
@@ -53,7 +55,11 @@ class RdisqResponse(object):
             return self.default_timeout
 
     @property
-    def redis_con(self)->Redis:
+    def task_id(self):
+        return self._task_id
+
+    @property
+    def redis_con(self) -> Redis:
         return self.dispatcher.get_redis()
 
     def is_processed(self):
@@ -76,7 +82,7 @@ class RdisqResponse(object):
         if not timeout:
             timeout = self.get_service_timeout()
         redis_response = self.redis_con.brpop(self._task_id,
-                                         timeout=timeout)  # can be tuple of (queue_base_name, string) or None
+                                              timeout=timeout)  # can be tuple of (queue_base_name, string) or None
         if redis_response is None:
             raise RdisqResponseTimeout(self._task_id)
         queue_name, response = redis_response

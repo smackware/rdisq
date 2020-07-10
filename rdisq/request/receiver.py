@@ -1,6 +1,7 @@
 from typing import *
 
 from rdisq.consts import RECEIVER_SERVICE_NAME
+from rdisq.payload import SessionResult
 from rdisq.request.message import RdisqMessage
 from rdisq.request.dispatcher import RequestDispatcher
 from rdisq.service import RdisqService, remote_method
@@ -41,6 +42,11 @@ class RemoveQueue(RdisqMessage):
     def __init__(self, old_queue_name: str):
         self.old_queue_name = old_queue_name
         super(RemoveQueue, self).__init__()
+
+
+class GetStatus(RdisqMessage):
+    def __init__(self):
+        super(GetStatus, self).__init__()
 
 
 CORE_RECEIVER_MESSAGES = {StartHandling, StopHandling, GetRegisteredMessages, AddQueue, RemoveQueue}
@@ -110,7 +116,12 @@ class ReceiverService(RdisqService):
     def receive_message(self, message: RdisqMessage):
         if type(message) not in self.get_registered_messages():
             raise RuntimeError(f"Received an unregistered message {type(message)}")
-        return self._handlers[type(message)].handle(message)
+        handler_result = self._handlers[type(message)].handle(message)
+        if message.session_data is not None:
+            result = SessionResult(result=handler_result, session_data=message.session_data)
+        else:
+            result = handler_result
+        return result
 
     def _on_process_loop(self):
         self.redis_dispatcher.update_receiver_service_status(self)

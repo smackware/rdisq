@@ -17,7 +17,7 @@ MISSING_SERVICE_NAME_IN_MAIN_ERROR_TEXT = \
 
 from . import EXPORTED_METHOD_PREFIX
 
-from .payload import RequestPayload
+from .payload import RequestPayload, SessionResult
 from .payload import ResponsePayload
 
 from .identification import get_request_key
@@ -186,6 +186,15 @@ class RdisqService(object):
         self.__queue_to_callable[broadcast_name] = method
         self.__broadcast_queues.add(broadcast_name)
 
+    def unregister_all(self):
+        while self.__direct_queues:
+            self.__direct_queues.pop()
+        while self.__broadcast_queues:
+            self.__broadcast_queues.pop()
+
+        for k in list(self.__queue_to_callable.keys()):
+            self.__queue_to_callable.pop(k)
+
     def unregister_from_queue(self, queue_base_name):
         direct_name = self.get_queue_name_for_method(queue_base_name, self.__uid)
         self.__direct_queues.remove(direct_name)
@@ -271,10 +280,17 @@ class RdisqService(object):
                 self.logger.exception(ex)
             self._on_exception(ex)
         duration_seconds = time.time() - time_start
+        if isinstance(result, SessionResult):
+            session_data = result.session_data
+            result = result.result
+        else:
+            session_data = None
         response_payload = ResponsePayload(
             returned_value=result,
             processing_time_seconds=duration_seconds,
-            raised_exception=raised_exception
+            raised_exception=raised_exception,
+            service_uid=self.uid,
+            session_data=session_data
         )
         serialized_response = self.serializer.dumps(response_payload)
         redis_con.lpush(task_id, serialized_response)

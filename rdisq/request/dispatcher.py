@@ -24,11 +24,12 @@ class ReceiverServiceStatus:
 class RequestDispatcher(PoolRedisDispatcher):
     ACTIVE_SERVICES_REDIS_HASH = "receiver_services"
 
-    def update_receiver_service_status(self, receiver: "ReceiverService"):
+    def update_receiver_service_status(self, receiver: "ReceiverService")->ReceiverServiceStatus:
         status = ReceiverServiceStatus(receiver)
         self.get_redis().hset(self.ACTIVE_SERVICES_REDIS_HASH, key=status.uid,
                               value=receiver.serializer.dumps(status)
                               )
+        return status
 
     def get_receiver_services(self) -> Dict[str, ReceiverServiceStatus]:
         raw_statuses: Dict[bytearray, bytearray] = self.get_redis().hgetall(self.ACTIVE_SERVICES_REDIS_HASH)
@@ -50,7 +51,7 @@ class RequestDispatcher(PoolRedisDispatcher):
         :return: Set of queue names.
         """
         services = self.get_receiver_services().values()
-        queue_to_services: Dict[str, set] = defaultdict(set)
+        queue_to_services: Dict[QueueName, set] = defaultdict(set)
         for service in services:
             for q in service.broadcast_queues:
                 queue_to_services[q].add(service.uid)

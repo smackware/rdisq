@@ -1,22 +1,20 @@
-import time
 from abc import abstractmethod
 from typing import *
 
 from rdisq.request.message import RdisqMessage
 from rdisq.request.dispatcher import ReceiverServiceStatus, RequestDispatcher
 from rdisq.consts import QueueName, ServiceUid
+from rdisq.request.receiver import AddQueue
 
 if TYPE_CHECKING:
     from rdisq.response import RdisqResponse
 
 
-class BaseRequestPlurality:
-    return_type: List["RdisqResponse"] = List["RdisqResponse"]
-
-
-class BaseRequestHandle:
+class BaseRequest:
     dispatcher: ClassVar[RequestDispatcher] = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
     _target_service_uids: Optional[Set[ServiceUid]]
+    _sent: bool = False
+    _finished: bool = False
 
     def __init__(self, message: RdisqMessage,
                  service_filter: Callable[["ReceiverServiceStatus"], bool] = None,
@@ -36,17 +34,27 @@ class BaseRequestHandle:
         if service_filter:
             self._service_filter = service_filter
         else:
-            self._automatic_filter()
+            self._filter_wrapper()
+
+    @property
+    def sent(self):
+        return self._sent
+
+    @property
+    def finished(self):
+        return self._finished
 
     @abstractmethod
-    def send_async(self) -> "BaseRequestHandle":
+    def send_async(self) -> "BaseRequest":
         if self._sent:
             raise RuntimeError("This message has already been sent")
         self._sent = True
         return self
 
+    @abstractmethod
     def wait(self, timeout=None):
-        raise NotImplementedError
+        if not self._sent:
+            raise RuntimeError("Trying to wait on an un-sent request")
 
     def send_and_wait_reply(self, timeout=None) -> Any:
         """
@@ -69,29 +77,40 @@ class BaseRequestHandle:
         if preexisting:
             queue = list(preexisting)[0]
         else:
-            queue = ''
-            # queue = self.dispatcher.generate_queue_name()
-            # MultiRequestHandle(
-            #     AddQueue(queue),
-            #     targets=self._get_target_uids()).send_and_wait_reply()
+            queue = self.dispatcher.generate_queue_name()
+            MultiRequest(
+                AddQueue(queue),
+                targets=self._get_target_uids()).send_and_wait_reply()
 
         return queue
 
-    def _automatic_filter(self):
+    def _filter_wrapper(self, base_filter: Callable[[ReceiverServiceStatus], bool]=None):
         message_class = type(self.message)
 
         def filter_by_message(service_status: ReceiverServiceStatus) -> bool:
-            return message_class in service_status.registered_messages
+            flag = True
+            if base_filter and not base_filter(service_status):
+                flag = False
+            if message_class not in service_status.registered_messages:
+                flag = False
+            return flag
 
         self._service_filter = filter_by_message
 
 
-class Request(BaseRequestHandle):
+class RdisqRequest(BaseRequest):
     _response: "RdisqResponse"
 
     @property
+    def returned_value(self):
+        if not self.finished:
+            raise RuntimeError("Tried getting returned value but the request hasn't finished yet.")
+        else:
+            return self._response.response_payload.returned_value
+
+    @property
     def task_id(self):
-        return self._response._task_id
+        return self._response.task_id
 
     @property
     def response(self) -> "RdisqResponse":
@@ -101,26 +120,25 @@ class Request(BaseRequestHandle):
             raise RuntimeError("not supposed to try to get results before the message was sent")
 
     def wait(self, timeout=None):
-        return self._response.wait(timeout)
+        super(RdisqRequest, self).wait()
+        r = self._response.wait(timeout)
+        self._finished = True
+        return r
 
-    def send_async(self) -> "Request":
-        super(Request, self).send_async()
+    def send_async(self) -> "RdisqRequest":
+        super(RdisqRequest, self).send_async()
         self._response = self.dispatcher.queue_task(
             # f"{RECEIVER_SERVICE_NAME}_{self.message.get_message_class_id()}",
-            self._get_channel(),
+            self._get_queue_for_services(self._get_target_uids()),
             self.message
         )
 
         return self
 
-    def _get_channel(self) -> QueueName:
-        channel = self._get_queue_for_services(self._get_target_uids())
-        return channel
 
-
-class MultiRequest(BaseRequestHandle):
+class MultiRequest(BaseRequest):
     _targets: Set[ServiceUid]
-    _requests: List[Request]
+    _requests: List[RdisqRequest]
 
     def send_async(self) -> "MultiRequest":
         super(MultiRequest, self).send_async()
@@ -128,11 +146,12 @@ class MultiRequest(BaseRequestHandle):
         self._requests = []
         for target_uid in target_uids:
             self._requests.append(
-                Request(self.message, lambda s: s.uid == target_uid).
+                RdisqRequest(self.message, lambda s: s.uid == target_uid).
                     send_async())
         return self
 
     def wait(self, timeout=None):
+        super(MultiRequest, self).wait()
         queues: List[QueueName] = [r.task_id for r in self._requests]
         reply_count = 0
         while reply_count < len(queues):
@@ -141,11 +160,13 @@ class MultiRequest(BaseRequestHandle):
             for r in self._requests:
                 if r.task_id == queue_name:
                     r.response.process_response(response)
+                    r._finished = True
                     reply_count += 1
                     break
         if reply_count < len(queues):
+            self._finished = True
             raise RuntimeError(f"Timeout waiting for replies. "
                                f"Got {reply_count} out of {len(queues)}")
         else:
-            return [r.response.response_payload.returned_value for
-                    r in self._requests]
+            self._finished = True
+            return [r.returned_value for r in self._requests]

@@ -3,13 +3,7 @@ from typing import *
 from rdisq.request._handler import _HandlerFactory
 
 
-class MessageRequestData:
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-
-class RdisqMessage:
+class  RdisqMessage:
     """
     Data to be sent from client to server.
 
@@ -19,6 +13,7 @@ class RdisqMessage:
     On the client side, use Request to send a message instance.
     """
     handler_factory: "_HandlerFactory" = None
+    session_data: Dict = None
 
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
