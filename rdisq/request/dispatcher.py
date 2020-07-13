@@ -12,7 +12,10 @@ if TYPE_CHECKING:
 
 
 class ReceiverServiceStatus:
-    """For serializing and putting in redis"""
+    """
+    Describes a receiver worker.
+
+    Meant to be generated and put in redis receiver_services upon heartbeat."""
 
     def __init__(self, worker: "ReceiverService"):
         self.registered_messages = worker.get_registered_messages()

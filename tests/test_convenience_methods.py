@@ -1,0 +1,26 @@
+"""Test convenience methods that save the need for stuff such as instantiating factories"""
+from threading import Thread
+from typing import *
+
+from rdisq.request.receiver import StartHandling
+from tests._messages import AddMessage
+
+if TYPE_CHECKING:
+    from tests.conftest import _RdisqMessageFixture
+
+
+def test_send_sync(rdisq_message_fixture: "_RdisqMessageFixture"):
+    rdisq_message_fixture.spawn_receiver()
+    r = StartHandling(AddMessage, {}).send_async()
+    rdisq_message_fixture.process_all_receivers()
+    assert AddMessage in r.wait()
+
+
+def test_send_async(rdisq_message_fixture: "_RdisqMessageFixture"):
+    receiver = rdisq_message_fixture.spawn_receiver()
+    Thread(group=None, target=receiver.process).start()
+
+    assert AddMessage in StartHandling(AddMessage, {}).send_and_wait()
+    rdisq_message_fixture.kill_all()
+
+
