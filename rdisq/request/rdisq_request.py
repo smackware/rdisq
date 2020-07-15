@@ -46,10 +46,13 @@ class BaseRequest:
 
     @abstractmethod
     def send_async(self) -> "BaseRequest":
-        if self._sent:
+        if not self._get_target_uids():
+            raise RuntimeError("Tried sending a request, but not suitable receiver services were found.")
+        elif self._sent:
             raise RuntimeError("This message has already been sent")
-        self._sent = True
-        return self
+        else:
+            self._sent = True
+            return self
 
     @abstractmethod
     def wait(self, timeout=None):
@@ -128,7 +131,6 @@ class RdisqRequest(BaseRequest):
     def send_async(self) -> "RdisqRequest":
         super(RdisqRequest, self).send_async()
         self._response = self.dispatcher.queue_task(
-            # f"{RECEIVER_SERVICE_NAME}_{self.message.get_message_class_id()}",
             self._get_queue_for_services(self._get_target_uids()),
             self.message
         )
@@ -142,9 +144,8 @@ class MultiRequest(BaseRequest):
 
     def send_async(self) -> "MultiRequest":
         super(MultiRequest, self).send_async()
-        target_uids = self._get_target_uids()
         self._requests = []
-        for target_uid in target_uids:
+        for target_uid in self._get_target_uids():
             self._requests.append(
                 RdisqRequest(self.message, lambda s: s.uid == target_uid).
                     send_async())

@@ -43,6 +43,10 @@ class RequestDispatcher(PoolRedisDispatcher):
 
     def filter_services(self, service_filter: Callable[["ReceiverServiceStatus"], bool]) -> Iterable[
         "ReceiverServiceStatus"]:
+        """Filters the services-statuses in redis with the service_filter function, and returns those that pass
+
+        :return: Statuses of services that match the filter.
+        """
         services = self.get_receiver_services()
         return filter(service_filter, services.values())
 

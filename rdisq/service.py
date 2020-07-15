@@ -1,5 +1,6 @@
 __author__ = 'smackware'
 
+import math
 from typing import *
 import time
 import uuid
@@ -56,6 +57,7 @@ class RdisqService(object):
     __go = True
     __sync_consumer = None
     __async_consumer = None
+    __running_process_loops: int = 0
 
     __queue_to_callable: Dict[QueueName, Callable]
     __broadcast_queues: Set[QueueName]
@@ -204,13 +206,25 @@ class RdisqService(object):
         self.__broadcast_queues.remove(broadcast_name)
         self.__queue_to_callable.pop(broadcast_name)
 
+    def wait_for_process_to_start(self, timeout=math.inf):
+        start_time = time.time()
+        while not self.__running_process_loops and time.time() - start_time < timeout:
+            time.sleep(1)
+        if not self.__running_process_loops:
+            raise TimeoutError("No process started to run")
+
     def process(self):
         self._on_start()
         redis_con = self.get_redis()
-        while self.__go:
-            self.__process_one(self.polling_timeout)
-            redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
-            self._on_process_loop()
+        self._on_process_loop()
+        try:
+            self.__running_process_loops += 1
+            while self.__go:
+                self.__process_one(self.polling_timeout)
+                redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
+                self._on_process_loop()
+        finally:
+            self.__running_process_loops -= 1
 
     def stop(self):
         self.__go = False

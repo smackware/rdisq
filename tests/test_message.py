@@ -36,6 +36,7 @@ def test_class_message(rdisq_message_fixture: "_RdisqMessageFixture"):
     summer = Summer()
     receiver_service = rdisq_message_fixture.spawn_receiver(message_class=AddMessage, instance=summer)
     Thread(group=None, target=receiver_service.process).start()
+    receiver_service.wait_for_process_to_start(3)
 
     request = RdisqRequest(AddMessage(1))
     request.send_async()
@@ -67,6 +68,7 @@ def test_dynamic_service(rdisq_message_fixture: "_RdisqMessageFixture"):
     summer = Summer()
     receiver_service = rdisq_message_fixture.spawn_receiver()
     Thread(group=None, target=receiver_service.process).start()
+    receiver_service.wait_for_process_to_start(3)
 
     receiver_service.register_message(StartHandling(SumMessage))
     assert RdisqRequest(SumMessage(1, 2)).send_and_wait_reply() == 3
@@ -75,14 +77,14 @@ def test_dynamic_service(rdisq_message_fixture: "_RdisqMessageFixture"):
 
     try:
         RdisqRequest(SumMessage(1, 2)).send_and_wait_reply(1)
-    except RdisqResponseTimeout:
+    except RuntimeError:
         pass
     else:
         raise RuntimeError("Should have failed communicating with receiver")
 
     try:
         RdisqRequest(AddMessage(1)).send_and_wait_reply(1)
-    except RdisqResponseTimeout:
+    except RuntimeError:
         pass
     else:
         raise RuntimeError("Should have failed communicating with receiver")
@@ -98,6 +100,7 @@ def test_dynamic_service(rdisq_message_fixture: "_RdisqMessageFixture"):
 def test_service_control_messages(rdisq_message_fixture):
     receiver_service = rdisq_message_fixture.spawn_receiver()
     Thread(group=None, target=receiver_service.process).start()
+    receiver_service.wait_for_process_to_start(3)
 
     assert RdisqRequest(StartHandling(SumMessage)).send_and_wait_reply() == {SumMessage} | CORE_RECEIVER_MESSAGES
     try:
@@ -119,7 +122,7 @@ def test_service_control_messages(rdisq_message_fixture):
 
     try:
         RdisqRequest(SumMessage(1, 2)).send_and_wait_reply(1)
-    except RdisqResponseTimeout:
+    except RuntimeError:
         pass
     else:
         raise RuntimeError("Should have failed communicating with receiver")
@@ -236,5 +239,3 @@ def test_custom_filter(rdisq_message_fixture: "_RdisqMessageFixture"):
     assert receivers[1]._handlers[AddMessage]._handler_instance.sum == 2
     assert receivers[2]._handlers[AddMessage]._handler_instance.sum == 0
     assert receivers[3]._handlers[AddMessage]._handler_instance.sum == 0
-
-
