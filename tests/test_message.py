@@ -1,3 +1,4 @@
+import time
 from typing import *
 from threading import Thread
 
@@ -100,8 +101,7 @@ def test_dynamic_service(rdisq_message_fixture: "_RdisqMessageFixture"):
 def test_service_control_messages(rdisq_message_fixture):
     receiver_service = rdisq_message_fixture.spawn_receiver()
     Thread(group=None, target=receiver_service.process).start()
-    receiver_service.wait_for_process_to_start(3)
-
+    receiver_service.wait_for_process_to_start(5)
     assert RdisqRequest(StartHandling(SumMessage)).send_and_wait_reply() == {SumMessage} | CORE_RECEIVER_MESSAGES
     try:
         RdisqRequest(StartHandling(SumMessage)).send_and_wait_reply()
@@ -157,7 +157,6 @@ def test_queues(rdisq_message_fixture):
 def test_multi(rdisq_message_fixture: "_RdisqMessageFixture"):
     receiver_service_1 = rdisq_message_fixture.spawn_receiver()
     receiver_service_2 = rdisq_message_fixture.spawn_receiver()
-
     request = MultiRequest(StartHandling(SumMessage)).send_async()
     receiver_service_1.rdisq_process_one()
     receiver_service_2.rdisq_process_one()

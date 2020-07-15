@@ -35,6 +35,8 @@ class _RdisqMessageFixture:
         for r in self.receivers:
             r.stop()
             r.unregister_all()
+            while r.is_active:
+                pass
         while self.receivers:
             self.receivers.pop(0)
 
