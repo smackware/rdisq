@@ -75,8 +75,10 @@ class BaseRequest:
             self._target_service_uids = set(service_ids)
         return self._target_service_uids
 
-    def _get_queue_for_services(self, service_uids: Set[str]) -> QueueName:
+    def get_queue_for_services(self, service_uids: Set[str]) -> QueueName:
         preexisting = self.dispatcher.find_queues_for_services(service_uids)
+        if not service_uids:
+            raise RuntimeError("Got empty service_uids set")
         if preexisting:
             queue = list(preexisting)[0]
         else:
@@ -131,7 +133,7 @@ class RdisqRequest(BaseRequest):
     def send_async(self) -> "RdisqRequest":
         super(RdisqRequest, self).send_async()
         self._response = self.dispatcher.queue_task(
-            self._get_queue_for_services(self._get_target_uids()),
+            self.get_queue_for_services(self._get_target_uids()),
             self.message
         )
 

@@ -4,6 +4,7 @@ import math
 from typing import *
 import time
 import uuid
+import logging
 
 from .consts import QueueName
 
@@ -24,6 +25,7 @@ from .payload import ResponsePayload
 from .identification import get_request_key
 from .serialization import PickleSerializer
 
+from .redis_dispatcher import LocalRedisDispatcher, AbstractRedisDispatcher
 from .consumer import RdisqAsyncConsumer
 from .consumer import RdisqWaitingConsumer
 
@@ -47,14 +49,16 @@ class RdisqService(object):
             return a + b;
     =============================================
     """
-    logger = None
+    LOGGING_FORMAT = "%(levelname)s: %(name)s: %(message)s"
+
+    logger: "logging.Logger" = None
     log_returned_exceptions = True
     service_name = None
     response_timeout = 10
     polling_timeout = 1
     redis_dispatcher: ClassVar["AbstractRedisDispatcher"] = None
     serializer: ClassVar[PickleSerializer] = PickleSerializer()
-    __go = True
+    __keep_working = True
     __sync_consumer = None
     __async_consumer = None
     __running_process_loops: int = 0
@@ -68,9 +72,21 @@ class RdisqService(object):
             raise NotImplementedError(MISSING_DISPATCHER_ERROR_TEXT)
         if self.__class__.__module__ == '__main__' and self.service_name is None:
             raise NotImplementedError(MISSING_SERVICE_NAME_IN_MAIN_ERROR_TEXT)
-        self.__is_suspended = False
         self.__uid = uid or str(uuid.uuid4())
+        if self.logger is None:
+            self.logger = self.__setup_logger(self.__uid, logging.DEBUG)
+        self.__is_suspended = False
         self.__map_exposed_methods_to_queues()
+
+    def __setup_logger(self, name, level: int):
+        logger = logging.getLogger(name)
+        logger.setLevel(level)
+        if len(logger.handlers) == 0:
+            log_stream = logging.StreamHandler()
+            formatter = logging.Formatter(self.LOGGING_FORMAT)
+            log_stream.setFormatter(formatter)
+            logger.addHandler(log_stream)
+        return logger
 
     @classmethod
     def get_service_name(cls):
@@ -147,7 +163,7 @@ class RdisqService(object):
 
     @property
     def is_active(self):
-        return self.__go
+        return self.__running_process_loops > 0
 
     @property
     def uid(self):
@@ -181,6 +197,7 @@ class RdisqService(object):
         if not queue_base_name:
             queue_base_name = self.chop_prefix_from_exported_method_name(method.__name__)
         direct_name = self.get_queue_name_for_method(queue_base_name, self.__uid)
+        self.logger.info(f"Registering method to queue {direct_name}")
         self.__queue_to_callable[direct_name] = method
         self.__direct_queues.add(direct_name)
 
@@ -189,6 +206,13 @@ class RdisqService(object):
         self.__broadcast_queues.add(broadcast_name)
 
     def unregister_all(self):
+        # If we want to unregister messages while trying to stop - we must wait until full stop
+        # otherwise we may be handling messages for removed queues
+        if self.__keep_working is False:
+            self.logger.warning("unregister_all requested while stopping, will have to wait until the service stops.")
+            while self.is_active:
+                pass
+        self.logger.info(f"unregistering all handlers")
         while self.__direct_queues:
             self.__direct_queues.pop()
         while self.__broadcast_queues:
@@ -219,15 +243,17 @@ class RdisqService(object):
         self._on_process_loop()
         try:
             self.__running_process_loops += 1
-            while self.__go:
+            while self.__keep_working:
                 self.__process_one(self.polling_timeout)
                 redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
                 self._on_process_loop()
         finally:
             self.__running_process_loops -= 1
+        self.redis_dispatcher.close()
+        self.logger.info("Stopped!")
 
     def stop(self):
-        self.__go = False
+        self.__keep_working = False
 
     def _pre(self, method_queue_name):
         """Performs after something was found in the queue_base_name"""
@@ -272,7 +298,10 @@ class RdisqService(object):
             return False
         method_queue_name, task_id = redis_result
         request_key = get_request_key(task_id.decode())
-        call = self.__queue_to_callable[method_queue_name.decode()]
+        decoded_queue_name = method_queue_name.decode()
+        if decoded_queue_name not in self.__queue_to_callable:
+            raise RuntimeError(f"{self.__uid}: Queue not found: {decoded_queue_name}")
+        call = self.__queue_to_callable[decoded_queue_name]
         data_string = redis_con.get(request_key)
         if data_string is None:
             return
