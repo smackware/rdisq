@@ -3,6 +3,8 @@
 *.gz
 nohup.out
 
+__pycache__
+
 /build
 /dist
 /rdisq.egg-info
