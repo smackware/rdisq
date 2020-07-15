@@ -15,6 +15,9 @@ class AbstractRedisDispatcher(object):
         """
         raise NotImplementedError("Must implement get_redis(self) method of Rdisq subclass")
 
+    def close(self):
+        raise NotImplementedError("Must implement close(self) of dispatcher")
+
 
 class SimpleRedisDispatcher(AbstractRedisDispatcher):
     redis_args = None
@@ -24,9 +27,13 @@ class SimpleRedisDispatcher(AbstractRedisDispatcher):
         self.redis_args = redis_args
         self.redis_kwargs = redis_kwargs
         AbstractRedisDispatcher.__init__(self)
+        self.redis = Redis(*self.redis_args, **self.redis_kwargs)
 
     def get_redis(self):
-        return Redis(*self.redis_args, **self.redis_kwargs)
+        return self.redis
+
+    def close(self):
+        self.redis.close()
 
 
 class LocalRedisDispatcher(SimpleRedisDispatcher):
@@ -43,3 +50,6 @@ class PoolRedisDispatcher(AbstractRedisDispatcher):
 
     def get_redis(self):
         return Redis(connection_pool=self.redis_pool)
+
+    def close(self):
+        self.redis_pool.disconnect()

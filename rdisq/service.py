@@ -17,7 +17,7 @@ from .payload import ResponsePayload
 from .identification import get_request_key
 from .serialization import PickleSerializer
 
-from .redis_dispatcher import LocalRedisDispatcher
+from .redis_dispatcher import LocalRedisDispatcher, AbstractRedisDispatcher
 from .consumer import RdisqAsyncConsumer
 from .consumer import RdisqWaitingConsumer
 
@@ -46,7 +46,7 @@ class RdisqService(object):
     service_name = None
     response_timeout = 10
     polling_timeout = 1
-    redis_dispatcher = None
+    redis_dispatcher: AbstractRedisDispatcher = None
     serializer = PickleSerializer()
     __go = True
     __sync_consumer = None
@@ -243,6 +243,7 @@ class RdisqService(object):
         while self.__go:
             self.__process_one(self.polling_timeout)
             redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
+        self.redis_dispatcher.close()
 
     def stop(self):
         self.__go = False
