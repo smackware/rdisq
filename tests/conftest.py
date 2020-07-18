@@ -43,16 +43,7 @@ class _RdisqMessageFixture:
 
 @pytest.fixture
 def rdisq_message_fixture():
-    # redis = Redis(host='127.0.0.1', port=6379, db=0)
-    # redis.flushdb()
-    # receivers = []
-    #
-    # def _receiver_factory():
-    #     _receiver = ReceiverService()
-    #     receivers.append(_receiver)
-    #     return _receiver
 
-    # return _receiver_factory
     r = _RdisqMessageFixture()
     yield r
     r.kill_all()

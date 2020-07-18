@@ -1,13 +1,13 @@
 from typing import *
 
 from rdisq.consts import RECEIVER_SERVICE_NAME
+from rdisq.configuration import get_rdisq_config
 from rdisq.payload import SessionResult
 from rdisq.request.message import RdisqMessage
 from rdisq.request.dispatcher import RequestDispatcher
 from rdisq.service import RdisqService, remote_method
 
-if TYPE_CHECKING:
-    from rdisq.request._handler import _Handler
+from rdisq.request.handler import _Handler, _HandlerFactory
 
 
 class StartHandling(RdisqMessage):
@@ -63,7 +63,8 @@ class ReceiverService(RdisqService):
         self._handlers = dict()
 
         for m in CORE_RECEIVER_MESSAGES:
-            self.register_message(StartHandling(m, self))
+            handling_message = StartHandling(m, self)
+            self.register_message(handling_message)
 
         if message_class:
             self.register_message(StartHandling(message_class, instance))
@@ -97,9 +98,8 @@ class ReceiverService(RdisqService):
             )
 
         self.add_queue(AddQueue(message.new_message_class.get_message_class_id()))
-        self._handlers[message.new_message_class] = \
-            message.new_message_class.handler_factory.spawn_handler(
-                message.new_handler_instance, self._handlers.values())
+        self._handlers[message.new_message_class] = get_rdisq_config().handler_factory.create_handler(
+            message.new_message_class, message.new_handler_instance, self._handlers.values())
 
         self._on_process_loop()
         return self.get_registered_messages()

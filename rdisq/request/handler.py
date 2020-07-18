@@ -61,30 +61,29 @@ T = TypeVar('T', bound=type)
 
 class _HandlerFactory(Generic[T]):
     _handler_function: Callable = None
+    _messages_registered_handlers: Dict[Type["RdisqMessage"], Callable] = {}
 
-    def __init__(self, handler_function: Callable):
-        self._handler_function = handler_function
+    def set_handler_function(self, handler_function: Callable, message_class: Type["RdisqMessage"]):
+        if message_class in self._messages_registered_handlers:
+            raise RuntimeError(f"Handler has already been set for {message_class}."
+                               f" Tried setting it to {handler_function}")
+        else:
+            self._messages_registered_handlers[message_class] = handler_function
+            return handler_function
 
-    def spawn_handler(self,
-                      instance_param: Union[Dict, object] = None,
-                      sibling_handlers: Iterable[_Handler] = frozenset()) -> _Handler:
-        """
-        :param instance_param: If the function is a method, this is an instance of the method's class, or kwargs for making a new one.
-        If the function is a method but the instance is None, will attempt to reuse an instance from a sibling.
-        :param sibling_handlers: Other handlers whose instances the new handler can reuse.
-        """
-        return _Handler(
-            self._handler_function,
-            self._handler_class, instance_param, sibling_handlers)
+    def create_handler(self, message_class: Type["RdisqMessage"],
+                       instance_param: Union[Dict, object] = None,
+                       sibling_handlers: Iterable[_Handler] = frozenset(),
+                       ) -> _Handler:
+        registered_function: Callable = self._messages_registered_handlers[message_class]
+        return _Handler(registered_function, handler_class=self._get_handler_class_for_function(registered_function),
+                        instance=instance_param, siblings=sibling_handlers)
 
-    @property
-    def _handler_class(self) -> Optional[Type]:
-        """
-        :return: If this message's handler is an bound-method, then return the class that contains it.
-        """
-        path = self._handler_function.__qualname__.split('.')
+    @staticmethod
+    def _get_handler_class_for_function(handler_function: Callable):
+        path = handler_function.__qualname__.split('.')
         # noinspection PyUnresolvedReferences
-        module = import_module(self._handler_function.__module__)
+        module = import_module(handler_function.__module__)
         try:
             handler_class = getattr(module, path[-2])
         except IndexError:
@@ -92,7 +91,7 @@ class _HandlerFactory(Generic[T]):
         else:
             if not isinstance(handler_class, type):
                 raise RuntimeError(
-                    f"Could not determine if {self._handler_function} is"
+                    f"Could not determine if {handler_function} is"
                     f" a bound-method or a standalone function.")
 
         return handler_class

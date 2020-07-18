@@ -237,6 +237,13 @@ class RdisqService(object):
         if not self.__running_process_loops:
             raise TimeoutError("No process started to run")
 
+    def wait_for_process_to_stop(self, timeout=math.inf):
+        start_time = time.time()
+        while self.__running_process_loops and time.time() - start_time < timeout:
+            time.sleep(1)
+        if self.__running_process_loops:
+            raise TimeoutError("Process did not stop in time")
+
     def process(self):
         self._on_start()
         redis_con = self.get_redis()

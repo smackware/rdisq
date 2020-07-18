@@ -19,6 +19,7 @@ def simple_worker():
     _processor.start()
     yield _worker
     _worker.stop()
+    _worker.wait_for_process_to_stop(5)
 
 
 @pytest.fixture

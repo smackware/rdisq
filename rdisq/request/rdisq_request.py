@@ -25,6 +25,7 @@ class BaseRequest:
         :param service_filter: Filter which services will be targeted by this request.
         :param targets: List of service UIDs this request is aimed at.
         """
+
         if service_filter is not None and targets is not None:
             raise RuntimeError("Can't provide both a filter and a target-list")
 
@@ -89,7 +90,7 @@ class BaseRequest:
 
         return queue
 
-    def _filter_wrapper(self, base_filter: Callable[[ReceiverServiceStatus], bool]=None):
+    def _filter_wrapper(self, base_filter: Callable[[ReceiverServiceStatus], bool] = None):
         message_class = type(self.message)
 
         def filter_by_message(service_status: ReceiverServiceStatus) -> bool:

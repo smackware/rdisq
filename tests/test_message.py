@@ -2,6 +2,8 @@ import time
 from typing import *
 from threading import Thread
 
+from rdisq.configuration import get_rdisq_config
+from rdisq.request.handler import _HandlerFactory
 from rdisq.request.rdisq_request import RdisqRequest, MultiRequest
 from rdisq.request.dispatcher import RequestDispatcher, ReceiverServiceStatus
 from rdisq.request.receiver import (
@@ -195,10 +197,16 @@ class _C:
 
 def test_get_handler_class(rdisq_message_fixture: "_RdisqMessageFixture"):
     receiver_service_1 = rdisq_message_fixture.spawn_receiver()
-    assert AddMessage.handler_factory._handler_class == Summer
-    assert StartHandling.handler_factory._handler_class == type(receiver_service_1)
-    assert MessageFromExternalModule.handler_factory._handler_class == _C
-    assert SumMessage.handler_factory._handler_class is None
+
+    def _get_handler_class(message_class: Type["RdisqMessage"]):
+        return get_rdisq_config().handler_factory._get_handler_class_for_function(
+            _HandlerFactory._messages_registered_handlers[message_class])
+
+    assert _get_handler_class(AddMessage) == Summer
+    assert _get_handler_class(StartHandling) == type(receiver_service_1)
+    assert _get_handler_class(MessageFromExternalModule) ==  _C
+    assert _get_handler_class(SumMessage) is None
+
 
 
 def test_handler_class_reuse(rdisq_message_fixture: "_RdisqMessageFixture"):
