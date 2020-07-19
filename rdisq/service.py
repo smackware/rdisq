@@ -281,7 +281,7 @@ class RdisqService(object):
         for attr in dir(self):
             call = getattr(self, attr)
             if self.is_remote_method(call):
-                self.register_method_to_queue(call)
+                self.register_method_to_queue(call, queue_base_name=attr)
 
         # if not self.__queue_to_callable:
         #     raise AttributeError("Cannot instantiate a service with no exposed methods")
