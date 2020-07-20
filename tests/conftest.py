@@ -2,6 +2,7 @@ from typing import *
 import pytest
 from redis import Redis
 
+from rdisq.configuration import get_rdisq_config
 from rdisq.request.receiver import ReceiverService
 
 if TYPE_CHECKING:

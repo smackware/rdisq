@@ -7,7 +7,7 @@ from rdisq.request.message import RdisqMessage
 from rdisq.request.dispatcher import RequestDispatcher
 from rdisq.service import RdisqService, remote_method
 
-from rdisq.request.handler import _Handler, _HandlerFactory
+from rdisq.request.handler import _Handler
 
 
 class StartHandling(RdisqMessage):
@@ -32,6 +32,13 @@ class GetRegisteredMessages(RdisqMessage):
         super().__init__()
 
 
+class RegisterAll(RdisqMessage):
+    def __init__(self, new_handler_kwargs: Union[Dict, object] = None, handler_class: type = None):
+        super(RegisterAll, self).__init__()
+        self.handler_class = handler_class
+        self.new_handler_kwargs = new_handler_kwargs
+
+
 class AddQueue(RdisqMessage):
     def __init__(self, new_queue_name: str):
         self.new_queue_name = new_queue_name
@@ -49,16 +56,18 @@ class GetStatus(RdisqMessage):
         super(GetStatus, self).__init__()
 
 
-CORE_RECEIVER_MESSAGES = {StartHandling, StopHandling, GetRegisteredMessages, AddQueue, RemoveQueue}
+CORE_RECEIVER_MESSAGES = {StartHandling, StopHandling, GetRegisteredMessages, AddQueue, RemoveQueue, RegisterAll}
 
 
 class ReceiverService(RdisqService):
     service_name = RECEIVER_SERVICE_NAME
     response_timeout = 10  # seconds
-    redis_dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
+    redis_dispatcher: RequestDispatcher
     _handlers: Dict[Type[RdisqMessage], "_Handler"]
 
-    def __init__(self, uid=None, message_class: Type[RdisqMessage] = None, instance: object = None):
+    def __init__(self, uid=None, message_class: Type[RdisqMessage] = None, instance: object = None,
+                 dispatcher: RequestDispatcher = None):
+        self.redis_dispatcher = dispatcher or get_rdisq_config().request_dispatcher
         super().__init__(uid)
         self._handlers = dict()
 
@@ -101,6 +110,16 @@ class ReceiverService(RdisqService):
         self._handlers[message.new_message_class] = get_rdisq_config().handler_factory.create_handler(
             message.new_message_class, message.new_handler_instance, self._handlers.values())
 
+        self._on_process_loop()
+        return self.get_registered_messages()
+
+    @RegisterAll.set_handler
+    def register_all(self, message: RegisterAll) -> Set[Type[RdisqMessage]]:
+        handlers: Dict[Type[RdisqMessage], "_Handler"] = get_rdisq_config().handler_factory.create_handlers_for_object(
+            message.new_handler_kwargs, message.handler_class)
+        for message_type, handler in handlers.items():
+            self.add_queue(AddQueue(message_type.get_message_class_id()))
+            self._handlers[message_type] = handler
         self._on_process_loop()
         return self.get_registered_messages()
 

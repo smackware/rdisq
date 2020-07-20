@@ -79,6 +79,31 @@ class _HandlerFactory(Generic[T]):
         return _Handler(registered_function, handler_class=self._get_handler_class_for_function(registered_function),
                         instance=instance_param, siblings=sibling_handlers)
 
+    def create_handlers_for_object(self,
+            new_handler_kwarg: Union[Dict, object],
+            handler_class: type = None) -> Dict[Type["RdisqMessage"], "_Handler"]:
+        """Create handler instances for any ragistered handler-methods in the object"""
+        handler_instance: object
+        if isinstance(new_handler_kwarg, dict):
+            handler_instance=handler_class(**new_handler_kwarg)
+        else:
+            handler_instance = new_handler_kwarg
+        del new_handler_kwarg
+        handler_class = type(handler_instance)
+
+        messages_in_handler_class: Dict[Type["RdisqMessage"], Callable] = {}
+        for m, f in self._messages_registered_handlers.items():
+            if self._get_handler_class_for_function(f) == handler_class:
+                messages_in_handler_class[m] = f
+        if not messages_in_handler_class:
+            raise RuntimeError(
+                f"Tried registering messages of {handler_instance}, but it had no registered message handlers")
+        else:
+            result: Dict[Type[RdisqMessage], _Handler] = {}
+            for m, f in messages_in_handler_class.items():
+                result[m] = self.create_handler(m, handler_instance)
+            return result
+
     @staticmethod
     def _get_handler_class_for_function(handler_function: Callable):
         path = handler_function.__qualname__.split('.')

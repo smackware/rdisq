@@ -18,7 +18,7 @@ class _RdisqConfig:
         return self._handler_factory
 
     @property
-    def dispatcher(self) -> "RequestDispatcher":
+    def request_dispatcher(self) -> "RequestDispatcher":
         from rdisq.request.dispatcher import RequestDispatcher
         if not self._dispatcher:
             self._dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
@@ -29,9 +29,6 @@ class _RdisqConfig:
         if not cls._default_config:
             cls._default_config = _RdisqConfig()
         return cls._default_config
-
-_rdisq_config: _RdisqConfig = None
-
 
 def get_rdisq_config() -> _RdisqConfig:
     return _RdisqConfig.get_default_config()

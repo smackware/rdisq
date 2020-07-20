@@ -1,6 +1,7 @@
 from abc import abstractmethod
 from typing import *
 
+from rdisq.configuration import get_rdisq_config
 from rdisq.request.message import RdisqMessage
 from rdisq.request.dispatcher import ReceiverServiceStatus, RequestDispatcher
 from rdisq.consts import QueueName, ServiceUid
@@ -10,22 +11,23 @@ if TYPE_CHECKING:
     from rdisq.response import RdisqResponse
 
 
-class BaseRequest:
-    dispatcher: ClassVar[RequestDispatcher] = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
+class _BaseRequest:
+    dispatcher: RequestDispatcher
     _target_service_uids: Optional[Set[ServiceUid]]
     _sent: bool = False
     _finished: bool = False
 
     def __init__(self, message: RdisqMessage,
                  service_filter: Callable[["ReceiverServiceStatus"], bool] = None,
-                 targets: Set[ServiceUid] = None
+                 targets: Set[ServiceUid] = None,
+                 request_dispatcher: RequestDispatcher=None
                  ):
         """
         :param message:
         :param service_filter: Filter which services will be targeted by this request.
         :param targets: List of service UIDs this request is aimed at.
         """
-
+        self.dispatcher = request_dispatcher or get_rdisq_config().request_dispatcher
         if service_filter is not None and targets is not None:
             raise RuntimeError("Can't provide both a filter and a target-list")
 
@@ -46,7 +48,7 @@ class BaseRequest:
         return self._finished
 
     @abstractmethod
-    def send_async(self) -> "BaseRequest":
+    def send_async(self) -> "_BaseRequest":
         if not self._get_target_uids():
             raise RuntimeError("Tried sending a request, but not suitable receiver services were found.")
         elif self._sent:
@@ -104,7 +106,7 @@ class BaseRequest:
         self._service_filter = filter_by_message
 
 
-class RdisqRequest(BaseRequest):
+class RdisqRequest(_BaseRequest):
     _response: "RdisqResponse"
 
     @property
@@ -141,7 +143,7 @@ class RdisqRequest(BaseRequest):
         return self
 
 
-class MultiRequest(BaseRequest):
+class MultiRequest(_BaseRequest):
     _targets: Set[ServiceUid]
     _requests: List[RdisqRequest]
 

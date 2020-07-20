@@ -7,9 +7,9 @@ import uuid
 import logging
 
 from .consts import QueueName
+from rdisq.configuration import get_rdisq_config
 
 if TYPE_CHECKING:
-    from redis import Redis
     from .redis_dispatcher import AbstractRedisDispatcher
 
 MISSING_DISPATCHER_ERROR_TEXT = \
@@ -25,7 +25,7 @@ from .payload import ResponsePayload
 from .identification import get_request_key
 from .serialization import PickleSerializer
 
-from .redis_dispatcher import LocalRedisDispatcher, AbstractRedisDispatcher
+from .redis_dispatcher import AbstractRedisDispatcher
 from .consumer import RdisqAsyncConsumer
 from .consumer import RdisqWaitingConsumer
 
@@ -56,16 +56,16 @@ class RdisqService(object):
     service_name = None
     response_timeout = 10
     polling_timeout = 1
-    redis_dispatcher: ClassVar["AbstractRedisDispatcher"] = None
+    redis_dispatcher: "AbstractRedisDispatcher" = None
     serializer: ClassVar[PickleSerializer] = PickleSerializer()
     __keep_working = True
     __sync_consumer = None
     __async_consumer = None
     __running_process_loops: int = 0
 
-    __queue_to_callable: Dict[QueueName, Callable]
-    __broadcast_queues: Set[QueueName]
-    __direct_queues: Set[QueueName]
+    _queue_to_callable: Dict[QueueName, Callable]
+    _broadcast_queues: Set[QueueName]
+    _direct_queues: Set[QueueName]
 
     def __init__(self, uid=None):
         if self.redis_dispatcher is None:
@@ -124,9 +124,8 @@ class RdisqService(object):
             cls.__async_consumer = RdisqAsyncConsumer(cls)
         return cls.__async_consumer
 
-    @classmethod
-    def get_redis(cls) -> "Redis":
-        return cls.redis_dispatcher.get_redis()
+    def get_redis(self) -> "Redis":
+        return self.redis_dispatcher.get_redis()
 
     @classmethod
     def get_queue_name_for_method(cls, method_name, prefix=None) -> QueueName:
@@ -148,7 +147,7 @@ class RdisqService(object):
     @classmethod
     def list_uids(cls):
         uids = []
-        rdb = cls.get_redis()
+        rdb = get_rdisq_config().request_dispatcher.get_redis()
         key = cls.get_service_uid_list_key()
         for k, v in rdb.hgetall(key).items():
             if float(v) > time.time() - 10:
@@ -172,9 +171,9 @@ class RdisqService(object):
 
     @property
     def listening_queues(self) -> FrozenSet[QueueName]:
-        queues = self.__direct_queues
+        queues = self._direct_queues.copy()
         if not self.__is_suspended:
-            queues = queues | self.__broadcast_queues
+            queues |= self._broadcast_queues
         return frozenset(queues)
 
     @property
@@ -182,7 +181,7 @@ class RdisqService(object):
         """
         :return: A set of all the callables that might be triggered by messages to this Service's queues.
         """
-        return frozenset(self.__queue_to_callable.values())
+        return frozenset(self._queue_to_callable.values())
 
     def rdisq_process_one(self, timeout=0):
         return self.__process_one(timeout=timeout)
@@ -198,12 +197,12 @@ class RdisqService(object):
             queue_base_name = self.chop_prefix_from_exported_method_name(method.__name__)
         direct_name = self.get_queue_name_for_method(queue_base_name, self.__uid)
         self.logger.info(f"Registering method to queue {direct_name}")
-        self.__queue_to_callable[direct_name] = method
-        self.__direct_queues.add(direct_name)
+        self._queue_to_callable[direct_name] = method
+        self._direct_queues.add(direct_name)
 
         broadcast_name = self.get_queue_name_for_method(queue_base_name)
-        self.__queue_to_callable[broadcast_name] = method
-        self.__broadcast_queues.add(broadcast_name)
+        self._queue_to_callable[broadcast_name] = method
+        self._broadcast_queues.add(broadcast_name)
 
     def unregister_all(self):
         # If we want to unregister messages while trying to stop - we must wait until full stop
@@ -213,22 +212,22 @@ class RdisqService(object):
             while self.is_active:
                 pass
         self.logger.info(f"unregistering all handlers")
-        while self.__direct_queues:
-            self.__direct_queues.pop()
-        while self.__broadcast_queues:
-            self.__broadcast_queues.pop()
+        while self._direct_queues:
+            self._direct_queues.pop()
+        while self._broadcast_queues:
+            self._broadcast_queues.pop()
 
-        for k in list(self.__queue_to_callable.keys()):
-            self.__queue_to_callable.pop(k)
+        for k in list(self._queue_to_callable.keys()):
+            self._queue_to_callable.pop(k)
 
     def unregister_from_queue(self, queue_base_name):
         direct_name = self.get_queue_name_for_method(queue_base_name, self.__uid)
-        self.__direct_queues.remove(direct_name)
-        self.__queue_to_callable.pop(direct_name)
+        self._direct_queues.remove(direct_name)
+        self._queue_to_callable.pop(direct_name)
 
         broadcast_name = self.get_queue_name_for_method(queue_base_name)
-        self.__broadcast_queues.remove(broadcast_name)
-        self.__queue_to_callable.pop(broadcast_name)
+        self._broadcast_queues.remove(broadcast_name)
+        self._queue_to_callable.pop(broadcast_name)
 
     def wait_for_process_to_start(self, timeout=math.inf):
         start_time = time.time()
@@ -246,7 +245,7 @@ class RdisqService(object):
 
     def process(self):
         self._on_start()
-        redis_con = self.get_redis()
+        redis_con = self.redis_dispatcher.get_redis()
         self._on_process_loop()
         try:
             self.__running_process_loops += 1
@@ -281,9 +280,9 @@ class RdisqService(object):
         pass
 
     def __map_exposed_methods_to_queues(self):
-        self.__queue_to_callable = {}
-        self.__broadcast_queues = set()
-        self.__direct_queues = set()
+        self._queue_to_callable = {}
+        self._broadcast_queues = set()
+        self._direct_queues = set()
 
         for attr in dir(self):
             call = getattr(self, attr)
@@ -297,7 +296,7 @@ class RdisqService(object):
         """Process a single queue_base_name event
         Will pend for an event (unless timeout is specified) then it will process it
         """
-        redis_con = self.get_redis()
+        redis_con = self.redis_dispatcher.get_redis()
         queues = list(self.listening_queues)
         redis_result = redis_con.brpop(queues, timeout=timeout)
 
@@ -306,9 +305,9 @@ class RdisqService(object):
         method_queue_name, task_id = redis_result
         request_key = get_request_key(task_id.decode())
         decoded_queue_name = method_queue_name.decode()
-        if decoded_queue_name not in self.__queue_to_callable:
+        if decoded_queue_name not in self._queue_to_callable:
             raise RuntimeError(f"{self.__uid}: Queue not found: {decoded_queue_name}")
-        call = self.__queue_to_callable[decoded_queue_name]
+        call = self._queue_to_callable[decoded_queue_name]
         data_string = redis_con.get(request_key)
         if data_string is None:
             return

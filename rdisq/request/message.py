@@ -5,7 +5,7 @@ from rdisq.consts import ServiceUid
 from rdisq.request.handler import _HandlerFactory
 
 if TYPE_CHECKING:
-    from rdisq.request.dispatcher import ReceiverServiceStatus
+    from rdisq.request.dispatcher import ReceiverServiceStatus, RequestDispatcher
     from rdisq.request.rdisq_request import RdisqRequest
 
 
@@ -39,17 +39,17 @@ class RdisqMessage:
         return get_rdisq_config().handler_factory.set_handler_function(handler_function, cls)
 
     def send_async(self, service_filter: Callable[["ReceiverServiceStatus"], bool] = None,
-                   targets: Set[ServiceUid] = None) -> "RdisqRequest":
+                   targets: Set[ServiceUid] = None, request_dispatcher: "RequestDispatcher" = None) -> "RdisqRequest":
         """Generate a request for this message, send it, and return the request handle
         :return: The request that was send with this message
         """
         # if we import this at module level, it would cause a circular import
         from rdisq.request.rdisq_request import RdisqRequest
-        return RdisqRequest(self, service_filter, targets).send_async()
+        return RdisqRequest(self, service_filter, targets, request_dispatcher).send_async()
 
     def send_and_wait(self, service_filter: Callable[["ReceiverServiceStatus"], bool] = None,
-                      targets: Set[ServiceUid] = None) -> Any:
+                      targets: Set[ServiceUid] = None, request_dispatcher: "RequestDispatcher" = None) -> Any:
         """Generate a request for this message, send it, wait for it to finish, and return the result
         :return: The result of the handler that handled the message
         """
-        return self.send_async(service_filter, targets).wait()
+        return self.send_async(service_filter, targets, request_dispatcher).wait()

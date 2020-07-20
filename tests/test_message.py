@@ -2,12 +2,14 @@ import time
 from typing import *
 from threading import Thread
 
+from redis import Redis
+
 from rdisq.configuration import get_rdisq_config
 from rdisq.request.handler import _HandlerFactory
 from rdisq.request.rdisq_request import RdisqRequest, MultiRequest
 from rdisq.request.dispatcher import RequestDispatcher, ReceiverServiceStatus
 from rdisq.request.receiver import (
-    ReceiverService, StartHandling, StopHandling, GetRegisteredMessages,
+    ReceiverService, StartHandling, StopHandling, GetRegisteredMessages, RegisterAll,
     CORE_RECEIVER_MESSAGES, AddQueue, RemoveQueue)
 from rdisq.response import RdisqResponseTimeout
 from tests._messages import SumMessage, sum_, AddMessage, SubtractMessage, Summer
@@ -112,7 +114,7 @@ def test_service_control_messages(rdisq_message_fixture):
     else:
         raise RuntimeError("Should have failed to re-sum_ a message to a receiver.")
 
-    dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
+    dispatcher = get_rdisq_config().request_dispatcher
     receivers_from_redis = dispatcher.get_receiver_services()
     assert receivers_from_redis[receiver_service.uid].registered_messages == {SumMessage} | CORE_RECEIVER_MESSAGES
     assert receivers_from_redis[receiver_service.uid].uid == receiver_service.uid
@@ -146,13 +148,15 @@ def test_queues(rdisq_message_fixture):
     RdisqRequest(StartHandling(SumMessage)).send_async()
     receiver_service.rdisq_process_one()
 
-    dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=0)
+    dispatcher = get_rdisq_config().request_dispatcher
     r = dispatcher.queue_task("ReceiverService_test_queue", SumMessage(1, 2))
     receiver_service.rdisq_process_one()
     assert r.wait(1) == 3
 
-    RdisqRequest(RemoveQueue(old_queue_name="test_queue")).send_async()
+    r = RdisqRequest(RemoveQueue(old_queue_name="test_queue")).send_async()
     receiver_service.rdisq_process_one()
+    result = r.wait()
+    assert 'ReceiverService_test_queue' not in result
     assert 'ReceiverService_test_queue' not in receiver_service.listening_queues
 
 
@@ -204,9 +208,8 @@ def test_get_handler_class(rdisq_message_fixture: "_RdisqMessageFixture"):
 
     assert _get_handler_class(AddMessage) == Summer
     assert _get_handler_class(StartHandling) == type(receiver_service_1)
-    assert _get_handler_class(MessageFromExternalModule) ==  _C
+    assert _get_handler_class(MessageFromExternalModule) == _C
     assert _get_handler_class(SumMessage) is None
-
 
 
 def test_handler_class_reuse(rdisq_message_fixture: "_RdisqMessageFixture"):
@@ -246,3 +249,44 @@ def test_custom_filter(rdisq_message_fixture: "_RdisqMessageFixture"):
     assert receivers[1]._handlers[AddMessage]._handler_instance.sum == 2
     assert receivers[2]._handlers[AddMessage]._handler_instance.sum == 0
     assert receivers[3]._handlers[AddMessage]._handler_instance.sum == 0
+
+
+def _basic_summer_test(rdisq_message_fixture: "_RdisqMessageFixture"):
+    request = AddMessage(1).send_async()
+    rdisq_message_fixture.process_all_receivers()
+    assert request.wait() == 3
+
+    request = SubtractMessage(1).send_async()
+    rdisq_message_fixture.process_all_receivers()
+    assert request.wait() == 2
+
+
+def test_register_entire_class_with_kwargs(rdisq_message_fixture: "_RdisqMessageFixture"):
+    rdisq_message_fixture.spawn_receiver()
+    request = RegisterAll({"start": 2}, Summer).send_async()
+    rdisq_message_fixture.process_all_receivers()
+    assert {AddMessage, SubtractMessage} < request.wait()
+
+    _basic_summer_test(rdisq_message_fixture)
+
+
+def test_register_entire_class_with_instance(rdisq_message_fixture: "_RdisqMessageFixture"):
+    rdisq_message_fixture.spawn_receiver()
+    s = Summer(2)
+    request = RegisterAll(s).send_async()
+    rdisq_message_fixture.process_all_receivers()
+    assert {AddMessage, SubtractMessage} < request.wait()
+
+    _basic_summer_test(rdisq_message_fixture)
+
+
+def test_another_server(rdisq_message_fixture: "_RdisqMessageFixture"):
+    dispatcher = RequestDispatcher(host='127.0.0.1', port=6379, db=2)
+    rdisq_message_fixture.redis = Redis(host='127.0.0.1', port=6379, db=2)
+    rdisq_message_fixture.redis.flushdb()
+
+    rdisq_message_fixture.receivers.append(ReceiverService(dispatcher=dispatcher))
+
+    request = RegisterAll({"start": 2}, Summer).send_async(request_dispatcher=dispatcher)
+    rdisq_message_fixture.process_all_receivers()
+    assert {AddMessage, SubtractMessage} < request.wait()
