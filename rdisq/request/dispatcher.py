@@ -22,6 +22,7 @@ class ReceiverServiceStatus:
         self.time = time.time()
         self.uid = worker.uid
         self.broadcast_queues: FrozenSet[QueueName] = worker.listening_queues
+        self.tags: Dict = worker.tags
 
 
 class RequestDispatcher(PoolRedisDispatcher):

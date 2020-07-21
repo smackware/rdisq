@@ -22,7 +22,7 @@ class _RdisqMessageFixture:
         self.receivers.append(_receiver)
         return _receiver
 
-    def spawn_receivers(self, count: int) -> List["RdisqService"]:
+    def spawn_receivers(self, count: int) -> List["ReceiverService"]:
         new_receivers: List["RdisqService"] = []
         for i in range(count):
             new_receivers.append(self.spawn_receiver())

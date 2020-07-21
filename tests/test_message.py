@@ -9,14 +9,24 @@ from rdisq.request.handler import _HandlerFactory
 from rdisq.request.rdisq_request import RdisqRequest, MultiRequest
 from rdisq.request.dispatcher import RequestDispatcher, ReceiverServiceStatus
 from rdisq.request.receiver import (
-    ReceiverService, StartHandling, StopHandling, GetRegisteredMessages, RegisterAll,
-    CORE_RECEIVER_MESSAGES, AddQueue, RemoveQueue)
+    ReceiverService, RegisterMessage, UnregisterMessage, GetRegisteredMessages, RegisterAll,
+    CORE_RECEIVER_MESSAGES, AddQueue, RemoveQueue, SetReceiverTags)
 from rdisq.response import RdisqResponseTimeout
 from tests._messages import SumMessage, sum_, AddMessage, SubtractMessage, Summer
 from tests._other_module import MessageFromExternalModule
 
 if TYPE_CHECKING:
     from tests.conftest import _RdisqMessageFixture
+
+
+def _basic_summer_test(rdisq_message_fixture: "_RdisqMessageFixture"):
+    request = AddMessage(1).send_async()
+    rdisq_message_fixture.process_all_receivers()
+    assert request.wait() == 3
+
+    request = SubtractMessage(1).send_async()
+    rdisq_message_fixture.process_all_receivers()
+    assert request.wait() == 2
 
 
 def test_message(rdisq_message_fixture: "_RdisqMessageFixture"):
@@ -75,10 +85,10 @@ def test_dynamic_service(rdisq_message_fixture: "_RdisqMessageFixture"):
     Thread(group=None, target=receiver_service.process).start()
     receiver_service.wait_for_process_to_start(3)
 
-    receiver_service.register_message(StartHandling(SumMessage))
+    receiver_service.register_message(RegisterMessage(SumMessage))
     assert RdisqRequest(SumMessage(1, 2)).send_and_wait_reply() == 3
 
-    receiver_service.unregister_message(StopHandling(SumMessage))
+    receiver_service.unregister_message(UnregisterMessage(SumMessage))
 
     try:
         RdisqRequest(SumMessage(1, 2)).send_and_wait_reply(1)
@@ -94,7 +104,7 @@ def test_dynamic_service(rdisq_message_fixture: "_RdisqMessageFixture"):
     else:
         raise RuntimeError("Should have failed communicating with receiver")
 
-    receiver_service.register_message(StartHandling(AddMessage, summer))
+    receiver_service.register_message(RegisterMessage(AddMessage, summer))
     RdisqRequest(AddMessage(1)).send_and_wait_reply()
     RdisqRequest(AddMessage(2)).send_and_wait_reply()
     assert summer.sum == 3
@@ -106,9 +116,9 @@ def test_service_control_messages(rdisq_message_fixture):
     receiver_service = rdisq_message_fixture.spawn_receiver()
     Thread(group=None, target=receiver_service.process).start()
     receiver_service.wait_for_process_to_start(5)
-    assert RdisqRequest(StartHandling(SumMessage)).send_and_wait_reply() == {SumMessage} | CORE_RECEIVER_MESSAGES
+    assert RdisqRequest(RegisterMessage(SumMessage)).send_and_wait_reply() == {SumMessage} | CORE_RECEIVER_MESSAGES
     try:
-        RdisqRequest(StartHandling(SumMessage)).send_and_wait_reply()
+        RdisqRequest(RegisterMessage(SumMessage)).send_and_wait_reply()
     except Exception:
         pass
     else:
@@ -122,7 +132,7 @@ def test_service_control_messages(rdisq_message_fixture):
     assert receiver_service.get_registered_messages() == {SumMessage} | CORE_RECEIVER_MESSAGES
     assert RdisqRequest(GetRegisteredMessages()).send_and_wait_reply() == {SumMessage} | CORE_RECEIVER_MESSAGES
     assert RdisqRequest(SumMessage(1, 2)).send_and_wait_reply() == 3
-    RdisqRequest(StopHandling(SumMessage)).send_and_wait_reply()
+    RdisqRequest(UnregisterMessage(SumMessage)).send_and_wait_reply()
 
     try:
         RdisqRequest(SumMessage(1, 2)).send_and_wait_reply(1)
@@ -131,7 +141,7 @@ def test_service_control_messages(rdisq_message_fixture):
     else:
         raise RuntimeError("Should have failed communicating with receiver")
 
-    assert RdisqRequest(StartHandling(AddMessage, {"start": 1})).send_and_wait_reply() == {
+    assert RdisqRequest(RegisterMessage(AddMessage, {"start": 1})).send_and_wait_reply() == {
         AddMessage} | CORE_RECEIVER_MESSAGES
     assert RdisqRequest(AddMessage(3)).send_and_wait_reply() == 4
 
@@ -145,7 +155,7 @@ def test_queues(rdisq_message_fixture):
     receiver_service.rdisq_process_one()
     assert 'ReceiverService_test_queue' in receiver_service.listening_queues
 
-    RdisqRequest(StartHandling(SumMessage)).send_async()
+    RdisqRequest(RegisterMessage(SumMessage)).send_async()
     receiver_service.rdisq_process_one()
 
     dispatcher = get_rdisq_config().request_dispatcher
@@ -163,7 +173,7 @@ def test_queues(rdisq_message_fixture):
 def test_multi(rdisq_message_fixture: "_RdisqMessageFixture"):
     receiver_service_1 = rdisq_message_fixture.spawn_receiver()
     receiver_service_2 = rdisq_message_fixture.spawn_receiver()
-    request = MultiRequest(StartHandling(SumMessage)).send_async()
+    request = MultiRequest(RegisterMessage(SumMessage)).send_async()
     receiver_service_1.rdisq_process_one()
     receiver_service_2.rdisq_process_one()
     r = request.wait(1)
@@ -207,16 +217,16 @@ def test_get_handler_class(rdisq_message_fixture: "_RdisqMessageFixture"):
             _HandlerFactory._messages_registered_handlers[message_class])
 
     assert _get_handler_class(AddMessage) == Summer
-    assert _get_handler_class(StartHandling) == type(receiver_service_1)
+    assert _get_handler_class(RegisterMessage) == type(receiver_service_1)
     assert _get_handler_class(MessageFromExternalModule) == _C
     assert _get_handler_class(SumMessage) is None
 
 
 def test_handler_class_reuse(rdisq_message_fixture: "_RdisqMessageFixture"):
     receiver_service_1 = rdisq_message_fixture.spawn_receiver()
-    RdisqRequest(StartHandling(AddMessage, {})).send_async()
+    RdisqRequest(RegisterMessage(AddMessage, {})).send_async()
     receiver_service_1.rdisq_process_one()
-    RdisqRequest(StartHandling(SubtractMessage)).send_async()
+    RdisqRequest(RegisterMessage(SubtractMessage)).send_async()
     receiver_service_1.rdisq_process_one()
 
     r = RdisqRequest(AddMessage(4)).send_async()
@@ -228,37 +238,33 @@ def test_handler_class_reuse(rdisq_message_fixture: "_RdisqMessageFixture"):
     assert r.wait(1) == 1
 
 
-def test_custom_filter(rdisq_message_fixture: "_RdisqMessageFixture"):
-    receivers: List[ReceiverService] = []
-    for i in range(4):
-        receivers.append(rdisq_message_fixture.spawn_receiver())
+def test_custom_filter_with_tags(rdisq_message_fixture: "_RdisqMessageFixture"):
+    receivers: List[ReceiverService] = rdisq_message_fixture.spawn_receivers(4)
 
-    request = MultiRequest(StartHandling(AddMessage, {})).send_async()
-    for r in receivers:
-        r.rdisq_process_one()
+    request = MultiRequest(RegisterAll({}, Summer)).send_async()
+    rdisq_message_fixture.process_all_receivers()
     request.wait(1)
 
     def filter_(receiver_status: ReceiverServiceStatus):
         return receiver_status.uid in [r.uid for r in receivers[:2]]
 
-    request = MultiRequest(AddMessage(2), filter_).send_async()
-    for r in receivers:
-        r.rdisq_process_one(1)
-    assert request.wait(1) == [2, 2]
-    assert receivers[0]._handlers[AddMessage]._handler_instance.sum == 2
-    assert receivers[1]._handlers[AddMessage]._handler_instance.sum == 2
+    example_tags = {'foo': 'bar'}
+    request = MultiRequest(SetReceiverTags(example_tags), filter_).send_async()
+    rdisq_message_fixture.process_all_receivers()
+
+    assert request.wait(1) == [example_tags, example_tags]
+
+    def filter_2_(receiver_status: ReceiverServiceStatus):
+        return receiver_status.tags.get('foo') == 'bar'
+
+    request = MultiRequest(AddMessage(3), filter_2_).send_async()
+    rdisq_message_fixture.process_all_receivers()
+    assert request.wait() == [3, 3]
+
+    assert receivers[0]._handlers[AddMessage]._handler_instance.sum == 3
+    assert receivers[1]._handlers[AddMessage]._handler_instance.sum == 3
     assert receivers[2]._handlers[AddMessage]._handler_instance.sum == 0
     assert receivers[3]._handlers[AddMessage]._handler_instance.sum == 0
-
-
-def _basic_summer_test(rdisq_message_fixture: "_RdisqMessageFixture"):
-    request = AddMessage(1).send_async()
-    rdisq_message_fixture.process_all_receivers()
-    assert request.wait() == 3
-
-    request = SubtractMessage(1).send_async()
-    rdisq_message_fixture.process_all_receivers()
-    assert request.wait() == 2
 
 
 def test_register_entire_class_with_kwargs(rdisq_message_fixture: "_RdisqMessageFixture"):

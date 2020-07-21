@@ -10,7 +10,7 @@ from rdisq.service import RdisqService, remote_method
 from rdisq.request.handler import _Handler
 
 
-class StartHandling(RdisqMessage):
+class RegisterMessage(RdisqMessage):
     def __init__(self, new_message_class: Type[RdisqMessage], new_handler_kwargs: Union[Dict, object] = None):
         """
         :param new_message_class: The receiver will start handling messages of this class
@@ -21,7 +21,7 @@ class StartHandling(RdisqMessage):
         super().__init__()
 
 
-class StopHandling(RdisqMessage):
+class UnregisterMessage(RdisqMessage):
     def __init__(self, old_message_class: Type[RdisqMessage]):
         self.old_message_class = old_message_class
         super().__init__()
@@ -56,7 +56,14 @@ class GetStatus(RdisqMessage):
         super(GetStatus, self).__init__()
 
 
-CORE_RECEIVER_MESSAGES = {StartHandling, StopHandling, GetRegisteredMessages, AddQueue, RemoveQueue, RegisterAll}
+class SetReceiverTags(RdisqMessage):
+    def __init__(self, new_dict: Dict):
+        super().__init__()
+        self.new_dict = new_dict
+
+
+CORE_RECEIVER_MESSAGES = {RegisterMessage, UnregisterMessage, GetRegisteredMessages, AddQueue, RemoveQueue,
+                          RegisterAll, SetReceiverTags}
 
 
 class ReceiverService(RdisqService):
@@ -64,21 +71,34 @@ class ReceiverService(RdisqService):
     response_timeout = 10  # seconds
     redis_dispatcher: RequestDispatcher
     _handlers: Dict[Type[RdisqMessage], "_Handler"]
+    _tags: Dict = None
 
     def __init__(self, uid=None, message_class: Type[RdisqMessage] = None, instance: object = None,
                  dispatcher: RequestDispatcher = None):
+        self._tags = {}
         self.redis_dispatcher = dispatcher or get_rdisq_config().request_dispatcher
         super().__init__(uid)
         self._handlers = dict()
 
         for m in CORE_RECEIVER_MESSAGES:
-            handling_message = StartHandling(m, self)
+            handling_message = RegisterMessage(m, self)
             self.register_message(handling_message)
 
         if message_class:
-            self.register_message(StartHandling(message_class, instance))
+            self.register_message(RegisterMessage(message_class, instance))
 
         self._on_process_loop()
+
+    @property
+    def tags(self) -> Dict:
+        return self._tags.copy()
+
+    @tags.setter
+    def tags(self, value: Dict):
+        if not isinstance(value, dict):
+            raise RuntimeError("tags must be a dict")
+        else:
+            self._tags = value
 
     @AddQueue.set_handler
     def add_queue(self, message: AddQueue):
@@ -98,8 +118,8 @@ class ReceiverService(RdisqService):
         f"""{message} is present so as not to break uniformity, but isn't used."""
         return set(self._handlers.keys())
 
-    @StartHandling.set_handler
-    def register_message(self, message: StartHandling) -> Set[Type[RdisqMessage]]:
+    @RegisterMessage.set_handler
+    def register_message(self, message: RegisterMessage) -> Set[Type[RdisqMessage]]:
         if message.new_message_class in self.get_registered_messages():
             raise RuntimeError(
                 f"Tried registering {message.new_message_class} to {self}."
@@ -123,13 +143,19 @@ class ReceiverService(RdisqService):
         self._on_process_loop()
         return self.get_registered_messages()
 
-    @StopHandling.set_handler
-    def unregister_message(self, message: StopHandling):
+    @UnregisterMessage.set_handler
+    def unregister_message(self, message: UnregisterMessage):
         self.unregister_from_queue(message.old_message_class.get_message_class_id())
         self._handlers.pop(message.old_message_class)
 
         self._on_process_loop()
         return self.get_registered_messages()
+
+    @SetReceiverTags.set_handler
+    def set_tags(self, message: SetReceiverTags) -> Dict:
+        self.tags = message.new_dict
+        self._on_process_loop()
+        return self.tags
 
     @remote_method
     def receive_message(self, message: RdisqMessage):

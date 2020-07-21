@@ -1,7 +1,7 @@
 from typing import *
 
 from rdisq.request.rdisq_request import RdisqRequest, MultiRequest
-from rdisq.request.receiver import StartHandling
+from rdisq.request.receiver import RegisterMessage
 from rdisq.request.session import RdisqSession
 from tests._messages import AddMessage
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 def test_session_base(rdisq_message_fixture: "_RdisqMessageFixture"):
     receivers = rdisq_message_fixture.spawn_receivers(5)
 
-    MultiRequest(StartHandling(AddMessage, {})).send_async()
+    MultiRequest(RegisterMessage(AddMessage, {})).send_async()
     rdisq_message_fixture.process_all_receivers()
 
     session = RdisqSession()
@@ -29,7 +29,7 @@ def test_session_base(rdisq_message_fixture: "_RdisqMessageFixture"):
 
 def test_session_data(rdisq_message_fixture: "_RdisqMessageFixture"):
     receivers = rdisq_message_fixture.spawn_receiver()
-    MultiRequest(StartHandling(AddMessage, {})).send_async()
+    MultiRequest(RegisterMessage(AddMessage, {})).send_async()
     rdisq_message_fixture.process_all_receivers(1)
     session = RdisqSession()
     session.session_data = {"a": 3}
