@@ -5,7 +5,10 @@ import time
 import uuid
 
 from rdisq.redis_dispatcher import PoolRedisDispatcher
-from rdisq.consts import QueueName
+from rdisq.consts import QueueName, ServiceUid
+
+if TYPE_CHECKING:
+    from rdisq.request.message import RdisqMessage
 
 if TYPE_CHECKING:
     from rdisq.request.receiver import ReceiverService
@@ -18,17 +21,17 @@ class ReceiverServiceStatus:
     Meant to be generated and put in redis receiver_services upon heartbeat."""
 
     def __init__(self, worker: "ReceiverService"):
-        self.registered_messages = worker.get_registered_messages()
-        self.time = time.time()
-        self.uid = worker.uid
+        self.registered_messages: Set[Type[RdisqMessage]] = worker.get_registered_messages()
+        self.uid: ServiceUid = worker.uid
         self.broadcast_queues: FrozenSet[QueueName] = worker.listening_queues
         self.tags: Dict = worker.tags
+        self.stopping: bool = worker.is_stopping
 
 
 class RequestDispatcher(PoolRedisDispatcher):
     ACTIVE_SERVICES_REDIS_HASH = "receiver_services"
 
-    def update_receiver_service_status(self, receiver: "ReceiverService")->ReceiverServiceStatus:
+    def update_receiver_service_status(self, receiver: "ReceiverService") -> ReceiverServiceStatus:
         status = ReceiverServiceStatus(receiver)
         self.get_redis().hset(self.ACTIVE_SERVICES_REDIS_HASH, key=status.uid,
                               value=receiver.serializer.dumps(status)
@@ -40,6 +43,9 @@ class RequestDispatcher(PoolRedisDispatcher):
         statuses: Dict[str, ReceiverServiceStatus] = {}
         for k, v in raw_statuses.items():
             statuses[k.decode()] = self.serializer.loads(v)
+
+        statuses = {k: v for k, v in statuses.items() if not v.stopping}
+
         return statuses
 
     def filter_services(self, service_filter: Callable[["ReceiverServiceStatus"], bool]) -> Iterable[

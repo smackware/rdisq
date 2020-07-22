@@ -165,6 +165,10 @@ class RdisqService(object):
         return self.__running_process_loops > 0
 
     @property
+    def is_stopping(self):
+        return not self.__keep_working
+
+    @property
     def uid(self):
         """Returns the unique id of this service instance"""
         return self.__uid
@@ -246,8 +250,8 @@ class RdisqService(object):
     def process(self):
         self._on_start()
         redis_con = self.redis_dispatcher.get_redis()
-        self._on_process_loop()
         try:
+            self._on_process_loop()
             self.__running_process_loops += 1
             while self.__keep_working:
                 self.__process_one(self.polling_timeout)

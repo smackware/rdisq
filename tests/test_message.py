@@ -2,6 +2,7 @@ import time
 from typing import *
 from threading import Thread
 
+import pytest
 from redis import Redis
 
 from rdisq.configuration import get_rdisq_config
@@ -10,7 +11,7 @@ from rdisq.request.rdisq_request import RdisqRequest, MultiRequest
 from rdisq.request.dispatcher import RequestDispatcher, ReceiverServiceStatus
 from rdisq.request.receiver import (
     ReceiverService, RegisterMessage, UnregisterMessage, GetRegisteredMessages, RegisterAll,
-    CORE_RECEIVER_MESSAGES, AddQueue, RemoveQueue, SetReceiverTags)
+    CORE_RECEIVER_MESSAGES, AddQueue, RemoveQueue, SetReceiverTags, ShutDownReceiver)
 from rdisq.response import RdisqResponseTimeout
 from tests._messages import SumMessage, sum_, AddMessage, SubtractMessage, Summer
 from tests._other_module import MessageFromExternalModule
@@ -110,6 +111,21 @@ def test_dynamic_service(rdisq_message_fixture: "_RdisqMessageFixture"):
     assert summer.sum == 3
 
     rdisq_message_fixture.kill_all()
+
+
+def test_shutdown_message(rdisq_message_fixture: "_RdisqMessageFixture"):
+    receiver_service = rdisq_message_fixture.spawn_receiver()
+    Thread(group=None, target=receiver_service.process).start()
+    receiver_service.wait_for_process_to_start()
+    assert {AddMessage} < RegisterMessage(AddMessage, {"start": 2}).send_and_wait()
+    assert AddMessage(3).send_and_wait() == 5
+    ShutDownReceiver().send_and_wait()
+
+    with pytest.raises(RuntimeError, match=r"Tried sending a request, but not suitable receiver services were found."):
+        AddMessage(3).send_and_wait(timeout=1)
+
+    receiver_service.wait_for_process_to_stop()
+    assert not receiver_service.is_active
 
 
 def test_service_control_messages(rdisq_message_fixture):

@@ -62,13 +62,17 @@ class SetReceiverTags(RdisqMessage):
         self.new_dict = new_dict
 
 
+class ShutDownReceiver(RdisqMessage):
+    def __init__(self):
+        super().__init__()
+
+
 CORE_RECEIVER_MESSAGES = {RegisterMessage, UnregisterMessage, GetRegisteredMessages, AddQueue, RemoveQueue,
-                          RegisterAll, SetReceiverTags}
+                          RegisterAll, SetReceiverTags, ShutDownReceiver}
 
 
 class ReceiverService(RdisqService):
     service_name = RECEIVER_SERVICE_NAME
-    response_timeout = 10  # seconds
     redis_dispatcher: RequestDispatcher
     _handlers: Dict[Type[RdisqMessage], "_Handler"]
     _tags: Dict = None
@@ -99,6 +103,11 @@ class ReceiverService(RdisqService):
             raise RuntimeError("tags must be a dict")
         else:
             self._tags = value
+
+    @ShutDownReceiver.set_handler
+    def shut_down_receiver(self, message: ShutDownReceiver = None):
+        self.stop()
+        self._on_process_loop()
 
     @AddQueue.set_handler
     def add_queue(self, message: AddQueue):

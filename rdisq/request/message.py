@@ -48,8 +48,8 @@ class RdisqMessage:
         return RdisqRequest(self, service_filter, targets, request_dispatcher).send_async()
 
     def send_and_wait(self, service_filter: Callable[["ReceiverServiceStatus"], bool] = None,
-                      targets: Set[ServiceUid] = None, request_dispatcher: "RequestDispatcher" = None) -> Any:
+                      targets: Set[ServiceUid] = None, request_dispatcher: "RequestDispatcher" = None, timeout=None) -> Any:
         """Generate a request for this message, send it, wait for it to finish, and return the result
         :return: The result of the handler that handled the message
         """
-        return self.send_async(service_filter, targets, request_dispatcher).wait()
+        return self.send_async(service_filter, targets, request_dispatcher).wait(timeout)
