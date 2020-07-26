@@ -259,7 +259,6 @@ class RdisqService(object):
                 self._on_process_loop()
         finally:
             self.__running_process_loops -= 1
-        self.redis_dispatcher.close()
         self.logger.info("Stopped!")
 
     def stop(self):
