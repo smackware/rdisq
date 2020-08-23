@@ -128,6 +128,24 @@ def test_shutdown_message(rdisq_message_fixture: "_RdisqMessageFixture"):
     assert not receiver_service.is_active
 
 
+def test_dispatcher_timeout(rdisq_message_fixture: "_RdisqMessageFixture"):
+    receiver_service = rdisq_message_fixture.spawn_receiver()
+    t = Thread(group=None, target=receiver_service.process)
+    t.start()
+    original_timeout = RequestDispatcher.SERVICE_STATUS_TIMEOUT
+    try:
+        RequestDispatcher.SERVICE_STATUS_TIMEOUT = 0
+        receiver_service.wait_for_process_to_start()
+        with pytest.raises(RuntimeError, match="Tried sending a request, but not suitable receiver services were found."):
+            AddMessage(3).send_and_wait()
+        receiver_service.stop()
+        t.join()
+    finally:
+        RequestDispatcher.SERVICE_STATUS_TIMEOUT = original_timeout
+    #assert not receiver_service.is_active
+    #assert AddMessage(3).send_and_wait() == 8
+
+
 def test_service_control_messages(rdisq_message_fixture):
     receiver_service = rdisq_message_fixture.spawn_receiver()
     Thread(group=None, target=receiver_service.process).start()

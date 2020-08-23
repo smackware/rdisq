@@ -20,32 +20,42 @@ class ReceiverServiceStatus:
 
     Meant to be generated and put in redis receiver_services upon heartbeat."""
 
-    def __init__(self, worker: "ReceiverService"):
+    def __init__(self, worker: "ReceiverService", timestamp: float):
         self.registered_messages: Set[Type[RdisqMessage]] = worker.get_registered_messages()
         self.uid: ServiceUid = worker.uid
         self.broadcast_queues: FrozenSet[QueueName] = worker.listening_queues
         self.tags: Dict = worker.tags
         self.stopping: bool = worker.is_stopping
+        self.timestamp = timestamp
 
 
 class RequestDispatcher(PoolRedisDispatcher):
+    SERVICE_STATUS_TIMEOUT = 10
     ACTIVE_SERVICES_REDIS_HASH = "receiver_services"
 
     def update_receiver_service_status(self, receiver: "ReceiverService") -> ReceiverServiceStatus:
-        status = ReceiverServiceStatus(receiver)
+        status = ReceiverServiceStatus(receiver, time.time())
         self.get_redis().hset(self.ACTIVE_SERVICES_REDIS_HASH, key=status.uid,
                               value=receiver.serializer.dumps(status)
                               )
         return status
 
     def get_receiver_services(self) -> Dict[str, ReceiverServiceStatus]:
-        raw_statuses: Dict[bytearray, bytearray] = self.get_redis().hgetall(self.ACTIVE_SERVICES_REDIS_HASH)
+        rdb = self.get_redis()
+        raw_statuses: Dict[bytearray, bytearray] = rdb.hgetall(self.ACTIVE_SERVICES_REDIS_HASH)
         statuses: Dict[str, ReceiverServiceStatus] = {}
+        stale_keys: List[str] = []
         for k, v in raw_statuses.items():
-            statuses[k.decode()] = self.serializer.loads(v)
+            service_key = k.decode()
+            status: ReceiverServiceStatus = self.serializer.loads(v)
+            if status.timestamp < (time.time() - self.SERVICE_STATUS_TIMEOUT):
 
-        statuses = {k: v for k, v in statuses.items() if not v.stopping}
-
+                stale_keys.append(service_key)
+            else:
+                statuses[service_key] = status
+        statuses = {k: v for k, v in statuses.items()}
+        for stale_key in stale_keys:
+            rdb.hdel(self.ACTIVE_SERVICES_REDIS_HASH, stale_key)
         return statuses
 
     def filter_services(self, service_filter: Callable[["ReceiverServiceStatus"], bool]) -> Iterable[
