@@ -254,8 +254,11 @@ class RdisqService(object):
             self._on_process_loop()
             self.__running_process_loops += 1
             while self.__keep_working:
-                self.__process_one(self.polling_timeout)
-                redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
+                try:
+                    self.__process_one(self.polling_timeout)
+                    redis_con.hset(self.get_service_uid_list_key(), self.__uid, time.time())
+                except Exception as e:
+                    self.logger.exception(e)
                 self._on_process_loop()
         finally:
             self.__running_process_loops -= 1
@@ -299,12 +302,15 @@ class RdisqService(object):
         """Process a single queue_base_name event
         Will pend for an event (unless timeout is specified) then it will process it
         """
-        redis_con = self.redis_dispatcher.get_redis()
-        queues = list(self.listening_queues)
-        redis_result = redis_con.brpop(queues, timeout=timeout)
+        try:
+            redis_con = self.redis_dispatcher.get_redis()
+            queues = list(self.listening_queues)
+            redis_result = redis_con.brpop(queues, timeout=timeout)
+        except ConnectionError:
+            return
 
         if redis_result is None:  # Timeout
-            return False
+            return
         method_queue_name, task_id = redis_result
         request_key = get_request_key(task_id.decode())
         decoded_queue_name = method_queue_name.decode()
